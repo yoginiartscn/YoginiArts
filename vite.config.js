@@ -8,7 +8,7 @@ export default defineConfig({
   base: process.env.NODE_ENV === 'production' ? '/YoginiArts/' : '/',
   
   root: './frontend',
-  publicDir: '../public',
+  publicDir: './public',
   
   server: {
     port: 3000,

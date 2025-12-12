@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import LanguageToggle from './LanguageToggle';
-import Footer from './Footer';
 
 const Layout = ({ children, showNavigation = false }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -41,8 +40,6 @@ const Layout = ({ children, showNavigation = false }) => {
       <main className="w-full flex-1">
         {children}
       </main>
-
-      <Footer />
     </div>
   );
 };

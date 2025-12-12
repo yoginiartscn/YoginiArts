@@ -2,6 +2,10 @@
   "navigation": {
     "home": "Home",
     "about": "About",
+    "products": "Products",
+    "gallery": "Gallery",
+    "exhibition": "Exhibition",
+    "reachUs": "Reach US",
     "thangka": "Thangka Art",
     "soundBowls": "Sound Bowls",
     "sacredItems": "Sacred Items",

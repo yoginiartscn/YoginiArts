@@ -1,0 +1,21 @@
+{
+  "title": "About Yogini Arts",
+  "subtitle": "Discover the sacred artistry and healing power of Himalayan traditions",
+  "missionTitle": "Our Mission",
+  "missionText": "Yogini Arts is dedicated to bringing the ancient wisdom and artistic traditions of the Himalayas to the modern world. We curate authentic Thangka paintings, handcrafted sound bowls, and sacred items directly from skilled artisans in Nepal, preserving the cultural heritage while making these treasures accessible to spiritual seekers worldwide.",
+  "values": {
+    "art": {
+      "title": "Sacred Art",
+      "description": "Authentic Thangka paintings that carry deep spiritual meaning and traditional craftsmanship."
+    },
+    "sound": {
+      "title": "Healing Sound",
+      "description": "Handcrafted Tibetan singing bowls designed for meditation and sound therapy practices."
+    },
+    "spirituality": {
+      "title": "Spiritual Connection",
+      "description": "Sacred items and artifacts that connect you with ancient Himalayan spiritual traditions."
+    }
+  }
+}
+
