@@ -14,6 +14,16 @@ export default defineConfig({
     port: 3000,
     host: true,
   },
+  preview: {
+    port: process.env.PORT || 3000,
+    host: true,
+    allowedHosts: [
+      'yoginiarts.onrender.com',
+      '.onrender.com', // Allow all Render subdomains
+      'localhost',
+      '127.0.0.1'
+    ]
+  },
   plugins: [react()],
   resolve: {
     alias: {

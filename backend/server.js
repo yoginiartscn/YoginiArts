@@ -25,7 +25,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 const defaultProdOrigins = [
   'https://yoginiartscn.github.io',
   'https://yoginiarts.com',
-  'https://www.yoginiarts.com'
+  'https://www.yoginiarts.com',
+  'https://yoginiarts.onrender.com'
 ];
 
 const defaultDevOrigins = [
@@ -37,16 +38,35 @@ const envOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : null;
 
-const allowedOrigins = envOrigins || (isProduction ? defaultProdOrigins : defaultDevOrigins);
+const baseAllowedOrigins = envOrigins || (isProduction ? defaultProdOrigins : defaultDevOrigins);
+
+// CORS origin function to allow Render subdomains
+const corsOrigin = (origin, callback) => {
+  // Allow requests with no origin (like mobile apps or curl requests)
+  if (!origin) return callback(null, true);
+  
+  // Check if origin is in the allowed list
+  if (baseAllowedOrigins.includes(origin)) {
+    return callback(null, true);
+  }
+  
+  // Allow all Render subdomains
+  if (origin.endsWith('.onrender.com')) {
+    return callback(null, true);
+  }
+  
+  // Reject other origins
+  callback(new Error('Not allowed by CORS'));
+};
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: corsOrigin,
   credentials: true
 }));
 
 // Explicitly handle preflight requests with correct CORS headers
 app.options('*', cors({
-  origin: allowedOrigins,
+  origin: corsOrigin,
   credentials: true
 }));
 
