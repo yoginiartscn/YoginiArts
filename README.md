@@ -1,4 +1,4 @@
-Yogini Arts – Sacred Art & Sound Experience Platform
+##Yogini Arts – Sacred Art & Sound Experience Platform
 
 Yogini Arts is a beautifully crafted front-end experience designed to showcase the sacred artistry of Thangka paintings and the healing resonance of Tibetan sound bowls. Inspired by the brand’s commitment to tradition, craftsmanship, and spiritual heritage, the platform visually presents the essence of Yogini Arts through elegant UI design, immersive storytelling, and rich cultural content.
 
