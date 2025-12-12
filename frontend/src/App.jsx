@@ -43,8 +43,11 @@ function App() {
     // You can add routing logic here or state management
   };
 
+  // Set base path for production (Render deployment)
+  const basename = import.meta.env.PROD ? '/YoginiArts' : '';
+
   return (
-    <Router>
+    <Router basename={basename}>
       <Layout showNavigation={false}>
         <Routes>
           <Route 

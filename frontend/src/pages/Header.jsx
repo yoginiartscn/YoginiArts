@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import useBreakpoint from '../hooks/useBreakpoint';
 
 // Flag Component - Circular flag display
@@ -32,11 +32,11 @@ const Header = () => {
   } = useBreakpoint();
 
   const navigation = [
-    { name: t('navigation.home'), href: '/' },
-    { name: t('navigation.about'), href: '/about' },
-    { name: t('navigation.products'), href: '/products' },
-    { name: t('navigation.gallery'), href: '/gallery' },
-    { name: t('navigation.exhibition'), href: '/exhibition' },
+    { name: t('navigation.home'), path: '/' },
+    { name: t('navigation.about'), path: '/about' },
+    { name: t('navigation.products'), path: '/products' },
+    { name: t('navigation.gallery'), path: '/gallery' },
+    { name: t('navigation.exhibition'), path: '/exhibition' },
   ];
 
   // Handle scroll detection
@@ -106,25 +106,25 @@ const Header = () => {
         <div className={`flex justify-between items-center ${isMobile ? 'h-14' : isTablet ? 'h-16' : 'h-20'} py-4`}>
           {/* Logo */}
           <div className="flex-shrink-0 flex items-center">
-            <a href="/" className="flex items-center">
+            <Link to="/" className="flex items-center">
               <img 
-                src="/ColorLogo.png" 
+                src={`${import.meta.env.BASE_URL}ColorLogo.png`}
                 alt="Yogini Arts" 
                 className={`${getLogoSize()} w-auto object-contain`}
               />
-            </a>
+            </Link>
           </div>
 
           {/* Navigation - Show on Tablet and Desktop */}
           {(isTablet || isDesktop) && (
             <nav className={`flex items-center ${getNavSpacing()}`}>
               {navigation.map((item) => {
-                const isActive = location.pathname === item.href || 
-                  (item.href !== '/' && location.pathname.startsWith(item.href));
+                const isActive = location.pathname === item.path || 
+                  (item.path !== '/' && location.pathname.startsWith(item.path));
                 return (
-                  <a
+                  <Link
                     key={item.name}
-                    href={item.href}
+                    to={item.path}
                     className={`group relative inline-block font-medium transition-colors duration-300 pb-1 ${
                       isTabletPortrait ? 'text-xs' : isTabletLandscapeSmallDesktop ? 'text-sm' : 'text-sm'
                     } ${
@@ -142,7 +142,7 @@ const Header = () => {
                       }`}
                       style={{ minHeight: '2px' }}
                     ></span>
-                  </a>
+                  </Link>
                 );
               })}
             </nav>
@@ -165,7 +165,7 @@ const Header = () => {
               }`}
             >
               <FlagIcon 
-                flagSrc={i18n.language === "en" ? "/China.svg" : "/USA.svg"} 
+                flagSrc={i18n.language === "en" ? `${import.meta.env.BASE_URL}China.svg` : `${import.meta.env.BASE_URL}USA.svg`}
                 className={isMobile ? "h-6 w-6" : isTabletPortrait ? "h-6 w-6" : "h-7 w-7"} 
               />
             </button>
@@ -199,12 +199,12 @@ const Header = () => {
           <div className="border-t border-gray-300 py-3">
             <div className="px-4 space-y-2">
               {navigation.map((item) => {
-                const isActive = location.pathname === item.href || 
-                  (item.href !== '/' && location.pathname.startsWith(item.href));
+                const isActive = location.pathname === item.path || 
+                  (item.path !== '/' && location.pathname.startsWith(item.path));
                 return (
-                  <a
+                  <Link
                     key={item.name}
-                    href={item.href}
+                    to={item.path}
                     onClick={() => setIsMobileMenuOpen(false)}
                     className={`group block relative font-medium py-2 pb-3 transition-colors duration-300 ${
                       isActive 
@@ -221,7 +221,7 @@ const Header = () => {
                       }`}
                       style={{ minHeight: '2px' }}
                     ></span>
-                  </a>
+                  </Link>
                 );
               })}
               {/* Mobile Reach US Button */}

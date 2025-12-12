@@ -54,7 +54,7 @@ const HomePage = ({ onCardSelect }) => {
           {/* Background Image - Full width and height */}
           <div className="absolute inset-0">
             <img 
-              src="/Homebg.jpg" 
+              src={`${import.meta.env.BASE_URL}Homebg.jpg`}
               alt="Yogini Arts" 
               className="w-full h-full object-cover"
             />
