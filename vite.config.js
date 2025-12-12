@@ -7,6 +7,9 @@ export default defineConfig({
   // Remove this base if using a custom domain or root domain
   base: process.env.NODE_ENV === 'production' ? '/YoginiArts/' : '/',
   
+  root: './frontend',
+  publicDir: '../public',
+  
   server: {
     port: 3000,
     host: true,
@@ -14,15 +17,16 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      'src': path.resolve(__dirname, './src'),
-      'components': path.resolve(__dirname, './src/components'),
-      'utils': path.resolve(__dirname, './src/utils')
+      '@': path.resolve(__dirname, './frontend/src'),
+      'src': path.resolve(__dirname, './frontend/src'),
+      'components': path.resolve(__dirname, './frontend/src/components'),
+      'utils': path.resolve(__dirname, './frontend/src/utils')
     },
     extensions: ['.js', '.jsx', '.json', '.ts', '.tsx']
   },
   build: {
-    sourcemap: true
+    sourcemap: true,
+    outDir: '../dist'
   }
 });
 
