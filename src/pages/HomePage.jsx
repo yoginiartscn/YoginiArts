@@ -1,11 +1,10 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import LanguageToggle from '../components/ui/LanguageToggle';
 
 const HomePage = ({ onCardSelect }) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   
   const formTypes = [
     {

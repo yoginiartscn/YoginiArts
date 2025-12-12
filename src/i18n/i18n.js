@@ -12,14 +12,16 @@ import zhHomepage from '../locales/zh/homepage.json';
 
 const resources = {
   en: {
-    translation: {},
-    common: enCommon,
-    homepage: enHomepage,
+    translation: {
+      ...enCommon,
+      homepage: enHomepage,
+    },
   },
   zh: {
-    translation: {},
-    common: zhCommon,
-    homepage: zhHomepage,
+    translation: {
+      ...zhCommon,
+      homepage: zhHomepage,
+    },
   },
 };
 
@@ -30,8 +32,6 @@ i18n
     resources,
     fallbackLng: 'en',
     debug: false,
-    ns: ['translation', 'common', 'homepage'],
-    defaultNS: 'translation',
     
     detection: {
       order: ['localStorage', 'navigator', 'htmlTag'],
