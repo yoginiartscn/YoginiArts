@@ -1,0 +1,23 @@
+{
+  "title": "Welcome to Yogini Arts",
+  "subtitle": "Discover the sacred artistry of Thangka paintings and the healing resonance of Tibetan sound bowls",
+  "forms": {
+    "thangka": {
+      "title": "Thangka Art",
+      "description": "Explore authentic hand-painted Thangka artworks from Nepal, each piece rich with spiritual symbolism and traditional craftsmanship."
+    },
+    "soundBowls": {
+      "title": "Sound Bowls",
+      "description": "Experience the healing power of artisan-crafted Tibetan singing bowls, meticulously engraved for meditation and sound therapy."
+    },
+    "sacredItems": {
+      "title": "Sacred Items",
+      "description": "Find meaningful sacred objects and spiritual artifacts, each sourced from experienced Nepalese artisans."
+    },
+    "contact": {
+      "title": "Contact Us",
+      "description": "Connect with us to learn more about our collection, inquire about custom pieces, or schedule a consultation."
+    }
+  }
+}
+

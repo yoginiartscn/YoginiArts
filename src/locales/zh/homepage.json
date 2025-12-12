@@ -1,0 +1,23 @@
+{
+  "title": "欢迎来到 Yogini Arts",
+  "subtitle": "探索唐卡绘画的神圣艺术和西藏颂钵的治愈共鸣",
+  "forms": {
+    "thangka": {
+      "title": "唐卡艺术",
+      "description": "探索来自尼泊尔的正宗手绘唐卡艺术品，每件作品都充满精神象征意义和传统工艺。"
+    },
+    "soundBowls": {
+      "title": "颂钵",
+      "description": "体验工匠制作的西藏颂钵的治愈力量，精心雕刻用于冥想和声音治疗。"
+    },
+    "sacredItems": {
+      "title": "圣物",
+      "description": "寻找有意义的圣物和灵性工艺品，每件都来自经验丰富的尼泊尔工匠。"
+    },
+    "contact": {
+      "title": "联系我们",
+      "description": "与我们联系，了解更多关于我们的收藏，咨询定制作品，或安排咨询。"
+    }
+  }
+}
+
