@@ -75,12 +75,47 @@ cd YoginiArts
 npm install
 ```
 
-3. Start the development server:
+3. Set up environment variables:
+```bash
+# Copy the example environment file
+cp .env.example .env
+
+# Edit .env and fill in your values (optional for basic setup)
+# For now, you can leave it empty if you're not using a backend API
+```
+
+4. Start the development server:
 ```bash
 npm run dev
 ```
 
-4. Open your browser and navigate to `http://localhost:3000`
+5. Open your browser and navigate to `http://localhost:3000`
+
+### Environment Variables
+
+The `.env` file is used to configure your application. Here's what each variable does:
+
+- **VITE_API_BASE_URL**: Backend API URL (if you add a backend later)
+  - Example: `http://localhost:5000/api` or `https://api.yoginiarts.com/api`
+  
+- **VITE_ASSET_BASE_URL**: CDN or asset hosting URL (for images/assets)
+  - Example: `https://cdn.yoginiarts.com` or `https://res.cloudinary.com/your-cloud-name`
+  
+- **VITE_APP_TITLE**: Website title (defaults to "Yogini Arts - Sacred Art & Sound Experience")
+  
+- **VITE_APP_DESCRIPTION**: Website description for SEO
+  
+- **VITE_CONTACT_EMAIL**: Contact email address
+  
+- **VITE_CONTACT_PHONE**: Contact phone number
+  
+- **VITE_WECHAT_QR_URL**: WeChat QR code image URL
+
+**Important Notes:**
+- All environment variables must be prefixed with `VITE_` to be accessible in your code
+- Access them using `import.meta.env.VITE_VARIABLE_NAME` or use the utility in `src/utils/env.js`
+- The `.env` file is gitignored - never commit sensitive data
+- For production, set these variables in your hosting platform (Vercel, Netlify, etc.)
 
 ### Building for Production
 
