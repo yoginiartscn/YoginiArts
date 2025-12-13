@@ -11,7 +11,7 @@ export default defineConfig({
   publicDir: './public',
   
   server: {
-    port: 3000,
+    port: 3300,
     host: true,
     allowedHosts: [
       'yoginiarts.onrender.com',
@@ -21,7 +21,7 @@ export default defineConfig({
     ]
   },
   preview: {
-    port: process.env.PORT || 3000,
+    port: process.env.PORT || 3300,
     host: '0.0.0.0',
     strictPort: false,
     // Allow all hosts for Render deployment (Render uses dynamic hostnames)
