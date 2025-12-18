@@ -16,6 +16,9 @@ export default defineConfig({
     allowedHosts: [
       'yoginiarts.onrender.com',
       '.onrender.com',
+      'yoginiarts.com',
+      'www.yoginiarts.com',
+      '.yoginiarts.com',
       'localhost',
       '127.0.0.1'
     ]
