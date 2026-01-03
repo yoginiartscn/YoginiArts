@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, Link } from 'react-router-dom';
 import useBreakpoint from '../hooks/useBreakpoint';
@@ -6,9 +6,9 @@ import useBreakpoint from '../hooks/useBreakpoint';
 // Flag Component - Circular flag display
 const FlagIcon = ({ flagSrc, className = "h-5 w-5" }) => (
   <div className={`${className} rounded-full overflow-hidden flex items-center justify-center`}>
-    <img 
-      src={flagSrc} 
-      alt="Flag" 
+    <img
+      src={flagSrc}
+      alt="Flag"
       className="w-full h-full object-cover rounded-full"
     />
   </div>
@@ -19,6 +19,8 @@ const Header = () => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [forceHidden, setForceHidden] = useState(false);
+
   const {
     isSmallMobile,
     isLargeMobile,
@@ -39,28 +41,39 @@ const Header = () => {
     { name: t('navigation.exhibition'), path: '/exhibition' },
   ];
 
-  // Handle scroll detection
+  // Allow sections to force-hide the header (e.g., Section 2).
   useEffect(() => {
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY;
-      setIsScrolled(scrollPosition > 0);
+    const onForceHidden = (e) => {
+      const hidden = Boolean(e?.detail?.hidden);
+      setForceHidden(hidden);
+      if (hidden) {
+        setIsMobileMenuOpen(false);
+      }
     };
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener('header:forceHidden', onForceHidden);
+    return () => window.removeEventListener('header:forceHidden', onForceHidden);
+  }, []);
+
+  // Default header behavior: always visible (no scroll-hide), only changes style on scroll.
+  useEffect(() => {
+    const handleScroll = () => {
+      const y = window.scrollY || 0;
+      setIsScrolled(y > 0);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
   }, []);
 
   const toggleLanguage = () => {
     const newLang = i18n.language === 'en' ? 'zh' : 'en';
-    // Save to localStorage FIRST before changing language
     localStorage.setItem('i18nextLng', newLang);
-    // Update HTML lang attribute immediately
     document.documentElement.lang = newLang;
-    // Then change the language - this will trigger all components to re-render
     i18n.changeLanguage(newLang).then(() => {
-      // Ensure localStorage is synced
       localStorage.setItem('i18nextLng', newLang);
-      // Force a page-wide update by dispatching a storage event
       window.dispatchEvent(new StorageEvent('storage', { key: 'i18nextLng', newValue: newLang }));
     });
   };
@@ -91,15 +104,14 @@ const Header = () => {
   };
 
   return (
-    <header 
-      className={`sticky top-0 z-50 transition-all duration-300 ${
-        isScrolled 
-          ? 'backdrop-blur-md shadow-lg' 
-          : ''
-      }`}
-      style={isScrolled 
-        ? { backgroundColor: 'rgba(255, 255, 255, 0.7)' }
-        : { backgroundColor: '#FFFBE9' }
+    <header
+      className={`sticky top-0 z-50 transition-all duration-500 ease-in-out ${
+        forceHidden ? 'opacity-0 -translate-y-full pointer-events-none' : 'opacity-100 translate-y-0'
+      } ${isScrolled ? 'backdrop-blur-md shadow-lg' : ''}`}
+      style={
+        isScrolled
+          ? { backgroundColor: 'rgba(255, 255, 255, 0.7)' }
+          : { backgroundColor: '#FFFBE9' }
       }
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -107,9 +119,9 @@ const Header = () => {
           {/* Logo */}
           <div className="flex-shrink-0 flex items-center">
             <Link to="/" className="flex items-center">
-              <img 
+              <img
                 src={`${import.meta.env.BASE_URL}ColorLogo.png`}
-                alt="Yogini Arts" 
+                alt="Yogini Arts"
                 className={`${getLogoSize()} w-auto object-contain`}
               />
             </Link>
@@ -119,7 +131,8 @@ const Header = () => {
           {(isTablet || isDesktop) && (
             <nav className={`flex items-center ${getNavSpacing()}`}>
               {navigation.map((item) => {
-                const isActive = location.pathname === item.path || 
+                const isActive =
+                  location.pathname === item.path ||
                   (item.path !== '/' && location.pathname.startsWith(item.path));
                 return (
                   <Link
@@ -128,17 +141,13 @@ const Header = () => {
                     className={`group relative inline-block font-medium transition-colors duration-300 pb-1 ${
                       isTabletPortrait ? 'text-xs' : isTabletLandscapeSmallDesktop ? 'text-sm' : 'text-sm'
                     } ${
-                      isActive 
-                        ? 'text-[#A53223]' 
-                        : 'text-gray-800 hover:text-[#A53223]'
+                      isActive ? 'text-[#A53223]' : 'text-gray-800 hover:text-[#A53223]'
                     }`}
                   >
                     {item.name}
-                    <span 
+                    <span
                       className={`absolute bottom-0 left-0 h-0.5 rounded-full transition-all duration-300 nav-underline ${
-                        isActive 
-                          ? 'w-0 opacity-0' 
-                          : 'w-0 opacity-0 group-hover:w-full group-hover:opacity-100'
+                        isActive ? 'w-0 opacity-0' : 'w-0 opacity-0 group-hover:w-full group-hover:opacity-100'
                       }`}
                       style={{ minHeight: '2px' }}
                     ></span>
@@ -151,12 +160,12 @@ const Header = () => {
           {/* Language Toggle & CTA Button */}
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Reach US Button - Show on Tablet Landscape and Desktop */}
-            {(isTabletLandscapeSmallDesktop || isDesktop) && (
+            {(isTabletLandscapeSmallDesktop || isDesktopLarge) && (
               <button className={`bg-gray-800 text-white rounded-lg font-medium hover:bg-gray-700 transition-colors ${getButtonSize()}`}>
                 {t('navigation.reachUs')}
               </button>
             )}
-            
+
             {/* Language Toggle Button */}
             <button
               onClick={toggleLanguage}
@@ -164,9 +173,9 @@ const Header = () => {
                 isMobile ? 'h-8 w-8' : isTabletPortrait ? 'h-9 w-9' : 'h-10 w-10'
               }`}
             >
-              <FlagIcon 
+              <FlagIcon
                 flagSrc={i18n.language === "en" ? `${import.meta.env.BASE_URL}China.svg` : `${import.meta.env.BASE_URL}USA.svg`}
-                className={isMobile ? "h-6 w-6" : isTabletPortrait ? "h-6 w-6" : "h-7 w-7"} 
+                className={isMobile ? "h-6 w-6" : isTabletPortrait ? "h-6 w-6" : "h-7 w-7"}
               />
             </button>
 
@@ -177,10 +186,10 @@ const Header = () => {
                 className="ml-2 p-2 text-gray-800 hover:text-gray-900"
                 aria-label="Toggle menu"
               >
-                <svg 
-                  className="w-6 h-6" 
-                  fill="none" 
-                  stroke="currentColor" 
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
                   {isMobileMenuOpen ? (
@@ -199,7 +208,8 @@ const Header = () => {
           <div className="border-t border-gray-300 py-3">
             <div className="px-4 space-y-2">
               {navigation.map((item) => {
-                const isActive = location.pathname === item.path || 
+                const isActive =
+                  location.pathname === item.path ||
                   (item.path !== '/' && location.pathname.startsWith(item.path));
                 return (
                   <Link
@@ -207,25 +217,22 @@ const Header = () => {
                     to={item.path}
                     onClick={() => setIsMobileMenuOpen(false)}
                     className={`group block relative font-medium py-2 pb-3 transition-colors duration-300 ${
-                      isActive 
-                        ? 'text-[#A53223]' 
-                        : 'text-gray-800 hover:text-[#A53223]'
+                      isActive ? 'text-[#A53223]' : 'text-gray-800 hover:text-[#A53223]'
                     }`}
                   >
                     {item.name}
-                    <span 
+                    <span
                       className={`absolute bottom-1 left-0 h-0.5 rounded-full transition-all duration-300 nav-underline ${
-                        isActive 
-                          ? 'w-0 opacity-0' 
-                          : 'w-0 opacity-0 group-hover:w-full group-hover:opacity-100'
+                        isActive ? 'w-0 opacity-0' : 'w-0 opacity-0 group-hover:w-full group-hover:opacity-100'
                       }`}
                       style={{ minHeight: '2px' }}
                     ></span>
                   </Link>
                 );
               })}
+
               {/* Mobile Reach US Button */}
-              <button 
+              <button
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="w-full bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors mt-2"
               >
@@ -240,4 +247,5 @@ const Header = () => {
 };
 
 export default Header;
+
 

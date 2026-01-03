@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import Header from './Header';
+import Header from '../components/Header';
 import Footer from '../components/ui/Footer';
 
 const Products = () => {
@@ -77,5 +77,7 @@ const Products = () => {
 };
 
 export default Products;
+
+
 
 

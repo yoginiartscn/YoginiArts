@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Layout from './components/ui/Layout';
-import HomePage from './pages/HomePage';
+import HomePage from './pages/Landing/HomePage';
 import About from './pages/About';
 import Products from './pages/Products';
 import Gallery from './pages/Gallery';
