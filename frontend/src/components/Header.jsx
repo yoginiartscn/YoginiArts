@@ -38,7 +38,8 @@ const Header = () => {
     { name: t('navigation.about'), path: '/about' },
     { name: t('navigation.products'), path: '/products' },
     { name: t('navigation.gallery'), path: '/gallery' },
-    { name: t('navigation.exhibition'), path: '/exhibition' },
+    // Reuse existing /exhibition route for "New and Notices"
+    { name: t('navigation.newsNotices'), path: '/exhibition' },
   ];
 
   // Allow sections to force-hide the header (e.g., Section 2).
@@ -94,13 +95,6 @@ const Header = () => {
     if (isTabletLandscapeSmallDesktop) return 'space-x-7';
     if (isDesktopLaptop) return 'space-x-8';
     return 'space-x-8'; // desktopLarge
-  };
-
-  // Determine button sizes
-  const getButtonSize = () => {
-    if (isTabletPortrait) return 'px-3 py-1.5 text-xs';
-    if (isTabletLandscapeSmallDesktop) return 'px-4 py-2 text-sm';
-    return 'px-4 py-2 text-sm'; // desktop
   };
 
   return (
@@ -159,13 +153,6 @@ const Header = () => {
 
           {/* Language Toggle & CTA Button */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Reach US Button - Show on Tablet Landscape and Desktop */}
-            {(isTabletLandscapeSmallDesktop || isDesktopLarge) && (
-              <button className={`bg-gray-800 text-white rounded-lg font-medium hover:bg-gray-700 transition-colors ${getButtonSize()}`}>
-                {t('navigation.reachUs')}
-              </button>
-            )}
-
             {/* Language Toggle Button */}
             <button
               onClick={toggleLanguage}
@@ -178,6 +165,18 @@ const Header = () => {
                 className={isMobile ? "h-6 w-6" : isTabletPortrait ? "h-6 w-6" : "h-7 w-7"}
               />
             </button>
+
+            {/* Contact Us CTA (maroon rectangle with cream text) */}
+            {(isTablet || isDesktop) && (
+              <Link
+                to="/contact"
+                className={`bg-[#A53223] text-[#FFFBE9] rounded-full font-medium hover:opacity-90 transition-opacity ${
+                  isTabletPortrait ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'
+                }`}
+              >
+                {t('navigation.contactUs')}
+              </Link>
+            )}
 
             {/* Mobile Menu Toggle Button */}
             {isMobile && (
@@ -231,13 +230,14 @@ const Header = () => {
                 );
               })}
 
-              {/* Mobile Reach US Button */}
-              <button
+              {/* Mobile Contact Us CTA */}
+              <Link
+                to="/contact"
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="w-full bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors mt-2"
+                className="block w-full text-center bg-[#A53223] text-[#FFFBE9] px-4 py-2 rounded-full text-sm font-medium hover:opacity-90 transition-opacity mt-3"
               >
-                {t('navigation.reachUs')}
-              </button>
+                {t('navigation.contactUs')}
+              </Link>
             </div>
           </div>
         )}

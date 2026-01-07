@@ -7,6 +7,7 @@ import About from './pages/About';
 import Products from './pages/Products';
 import Gallery from './pages/Gallery';
 import Exhibition from './pages/Exhibition';
+import Contact from './pages/Contact';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -43,8 +44,11 @@ function App() {
     // You can add routing logic here or state management
   };
 
-  // Set base path for production (Render deployment)
-  const basename = import.meta.env.PROD ? '/YoginiArts' : '';
+  // Keep Router basename aligned with Vite's BASE_URL (prevents /YoginiArts/ being forced on custom domains).
+  const basename =
+    import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
+      ? import.meta.env.BASE_URL.replace(/\/$/, '')
+      : '';
 
   return (
     <Router basename={basename}>
@@ -69,6 +73,10 @@ function App() {
           <Route 
             path="/exhibition" 
             element={<Exhibition />} 
+          />
+          <Route
+            path="/contact"
+            element={<Contact />}
           />
           <Route 
             path="/*" 
