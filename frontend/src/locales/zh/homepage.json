@@ -3,8 +3,31 @@
   "subtitle": "探索唐卡绘画的神圣艺术和西藏颂钵的治愈共鸣",
   "heroText": "将古老的电影制作艺术和山脉的治愈力量带入您的空间",
   "heroHeading": "神|圣|艺|术|与|声|音",
+  "feelSingingBowl": "感受颂钵",
+  "singingBowlDesc": "体验我们手工制作的颂钵的治愈共鸣，专为冥想和正念而设计。",
   "contactUs": "联系我们",
   "ourProducts": "我们的产品",
+  "products": {
+    "thangka": {
+      "title": "唐卡",
+      "pills": {
+        "handPainted": "手绘"
+      }
+    },
+    "singingBowl": {
+      "title": "颂钵",
+      "pills": {
+        "handCrafted": "手工制作",
+        "madeInNepal": "尼泊尔制造"
+      }
+    },
+    "jewelleries": {
+      "title": "珠宝",
+      "pills": {
+        "handCrafted": "手工制作"
+      }
+    }
+  },
   "ctaTitle": "让我们一起发展您的品牌！",
   "aboutTitle": "Yogini Arts – 神圣艺术与声音体验平台",
   "aboutSubtitle": "精心打造的平台，展示来自尼泊尔的正宗喜马拉雅艺术和声音治疗文化",

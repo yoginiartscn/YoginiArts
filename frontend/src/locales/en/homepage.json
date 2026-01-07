@@ -3,8 +3,31 @@
   "subtitle": "Discover the sacred artistry of Thangka paintings and the healing resonance of Tibetan sound bowls",
   "heroText": "Bring the ancient art of filmmaking and the healing power of the mountains into your space.",
   "heroHeading": "The Harmony of Sound",
+  "feelSingingBowl": "Feel the Singing Bowl",
+  "singingBowlDesc": "Experience the healing resonance of our handcrafted singing bowls, designed for meditation and mindfulness.",
   "contactUs": "Contact Us",
   "ourProducts": "Our Products",
+  "products": {
+    "thangka": {
+      "title": "Thangka",
+      "pills": {
+        "handPainted": "Painted with Hand"
+      }
+    },
+    "singingBowl": {
+      "title": "Singing Bowl",
+      "pills": {
+        "handCrafted": "Crafted with hand",
+        "madeInNepal": "Made In nepal"
+      }
+    },
+    "jewelleries": {
+      "title": "Jewelleries",
+      "pills": {
+        "handCrafted": "Crafted with Hand"
+      }
+    }
+  },
   "ctaTitle": "Let's grow your Brand Together!",
   "aboutTitle": "Yogini Arts – Sacred Art & Sound Experience Platform",
   "aboutSubtitle": "A beautifully crafted experience showcasing authentic Himalayan art and sound-healing culture from Nepal",

@@ -1,39 +1,49 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import useBreakpoint from '../../hooks/useBreakpoint';
 
 // How much page scroll should move to advance one title (larger = slower change).
 const SLIDE_SCROLL_STEP_VH = 0.25; // 25vh per step (slower than before)
 // How far to scroll into Section 2 before the sticky panel engages.
 const STICKY_START_OFFSET_VH = 1; // 1vh
+// Cache-buster for public/ assets (helps when CDN/browser caches old images with the same filename)
+const GALLERY_ASSET_VERSION = '1';
 
 const Section2 = ({ t }) => {
+  const { isMobile, isTablet, isSmallMobile } = useBreakpoint();
   const sectionRef = useRef(null);
   const stickyStartMarkerRef = useRef(null);
   const stickyStartAbsYRef = useRef(0);
   const rafRef = useRef(null);
   const manualNavRef = useRef({ active: false, targetIndex: 0, targetY: 0, raf: null });
 
+  // 3D Model Section Refs
+  const modelSectionRef = useRef(null);
+  const modelViewerRef = useRef(null);
+  const textRef = useRef(null);
+  const bowlContainerRef = useRef(null);
+
   const slides = useMemo(
     () => [
       {
         id: 'thanka',
-        title: 'Thanka',
-        image: 'Homebg.jpg',
-        pills: ['Painted with Hand'],
+        title: t('homepage.products.thangka.title'),
+        image: `gallery/WhiteTara.jpg?v=${GALLERY_ASSET_VERSION}`,
+        pills: [t('homepage.products.thangka.pills.handPainted')],
       },
       {
         id: 'singing-bowl',
-        title: 'Singing Bowl',
-        image: 'download.jpeg',
-        pills: ['Crafted with hand', 'Made In nepal'],
+        title: t('homepage.products.singingBowl.title'),
+        image: `gallery/Singingbowl.jpg?v=${GALLERY_ASSET_VERSION}`,
+        pills: [t('homepage.products.singingBowl.pills.handCrafted'), t('homepage.products.singingBowl.pills.madeInNepal')],
       },
       {
         id: 'jwelleries',
-        title: 'Jwelleries',
-        image: 'Homebg.jpg',
-        pills: ['Crafted with Hand'],
+        title: t('homepage.products.jewelleries.title'),
+        image: `gallery/Beads.jpg?v=${GALLERY_ASSET_VERSION}`,
+        pills: [t('homepage.products.jewelleries.pills.handCrafted')],
       },
     ],
-    []
+    [t]
   );
 
   // Default to first slide; scroll handler will correct immediately based on position.
@@ -190,13 +200,84 @@ const Section2 = ({ t }) => {
     };
   }, [slides.length]);
 
+  const [bgGradient, setBgGradient] = useState('rgba(255, 255, 255, 0.6)');
+
+  // 3D Model Scroll Animation
+  useEffect(() => {
+    const handleModelScroll = () => {
+      if (!modelSectionRef.current || !modelViewerRef.current || !textRef.current || !bowlContainerRef.current) return;
+
+      const rect = modelSectionRef.current.getBoundingClientRect();
+      const sectionHeight = rect.height;
+      const viewportHeight = window.innerHeight;
+      
+      const maxScroll = sectionHeight - viewportHeight;
+      const currentScroll = -rect.top;
+      
+      let progress = 0;
+      if (rect.top <= 0) {
+        progress = Math.max(0, Math.min(1, currentScroll / maxScroll));
+      } else {
+        progress = 0;
+      }
+
+      // Dynamic Background Color Animation based on scroll progress
+      // Start more transparent, become more opaque white
+      // Cycle colors slightly for effect
+      const hue = (progress * 50) % 360; // Subtle color shift
+      const opacity = 0.5 + (progress * 0.3); // 0.5 -> 0.8
+      setBgGradient(`rgba(255, 255, 255, ${opacity})`);
+
+      // Animation Phases
+      
+      // Responsive adjustments
+      const isMobileView = window.innerWidth < 768; // Simple check for animation logic
+      
+      // Phase 1: 0% - 15% -> Text fades out & moves up, Bowl enters from bottom
+      // Reduced duration from 0.2 to 0.15 for quicker transition
+      const p1 = Math.min(1, Math.max(0, progress / 0.15));
+      
+      // Text Animation: Center to Up & Fade
+      const textOpacity = 1 - p1;
+      const textY = isMobileView ? -100 * p1 : -150 * p1; // Less vertical movement on mobile
+      textRef.current.style.opacity = textOpacity;
+      textRef.current.style.transform = `translateY(calc(-50% + ${textY}px))`;
+      
+      // Bowl Entrance: translateY(100%) -> translateY(0%)
+      const bowlY = 100 * (1 - p1);
+      bowlContainerRef.current.style.transform = `translateY(${bowlY}%)`;
+      bowlContainerRef.current.style.opacity = p1; // Fade in
+
+      // Phase 2: 15% - 50% -> Bowl Rotates Horizontally (Theta)
+      // Reduced rotation amount: 360 -> 120 degrees
+      const p2 = Math.min(1, Math.max(0, (progress - 0.15) / 0.35));
+      const theta = p2 * 120; // Only rotate 120 degrees instead of 360
+
+      // Phase 3: 50% - 90% -> Bowl Rotates Vertically (Phi) to "show face"
+      const p3 = Math.min(1, Math.max(0, (progress - 0.5) / 0.4));
+      const startPhi = 75; // Default side view
+      const endPhi = isMobileView ? 30 : 20;   // Less steep angle on mobile
+      const phi = startPhi - (startPhi - endPhi) * p3;
+
+      // Apply to model-viewer
+      modelViewerRef.current.setAttribute('camera-orbit', `${theta}deg ${phi}deg 105%`);
+    };
+
+    window.addEventListener('scroll', handleModelScroll, { passive: true });
+    // Initial call
+    handleModelScroll();
+
+    return () => {
+      window.removeEventListener('scroll', handleModelScroll);
+    };
+  }, []);
+
   return (
     <section
       ref={sectionRef}
       className="w-full text-gray-900"
       style={{
         backgroundColor: '#FFFBE9',
-        height: `${100 + STICKY_START_OFFSET_VH + (slides.length - 1) * (SLIDE_SCROLL_STEP_VH * 100)}vh`,
       }}
     >
       {/* Entry buffer so the sticky panel "engages" after ~1vh */}
@@ -204,15 +285,14 @@ const Section2 = ({ t }) => {
       <div ref={stickyStartMarkerRef} />
 
       {/* Sticky viewport panel (driven by page scroll) */}
-      <div className="sticky top-0 h-screen">
-        <div className="relative w-full h-screen flex flex-col lg:flex-row bg-[#FFFBE9]">
-          {/* Bottom decorative image */}
-          <img
-            src={`${import.meta.env.BASE_URL}Section2.png`}
-            alt=""
-            aria-hidden="true"
-            className="pointer-events-none select-none absolute bottom-0 left-1/2 -translate-x-1/2 w-[100%] h-auto object-contain z-20"
-          />
+      <div
+        className="relative z-40"
+        style={{
+          height: `${100 + STICKY_START_OFFSET_VH + (slides.length - 1) * (SLIDE_SCROLL_STEP_VH * 100)}vh`,
+        }}
+      >
+        <div className="sticky top-0 h-screen">
+          <div className="relative w-full h-screen flex flex-col lg:flex-row bg-[#FFFBE9]">
 
           {/* Left Panel */}
           <div className="relative z-10 flex-1 px-6 sm:px-10 lg:px-14 py-8 lg:py-14 flex flex-col overflow-hidden items-start">
@@ -228,8 +308,8 @@ const Section2 = ({ t }) => {
                 {slides.map((slide, idx) => {
                   const isActive = idx === activeIndex;
                   return (
+                    <div key={slide.id}>
                     <button
-                      key={slide.id}
                       type="button"
                       onClick={() => goToSlide(idx)}
                       aria-current={isActive ? 'true' : undefined}
@@ -241,6 +321,26 @@ const Section2 = ({ t }) => {
                     >
                       {slide.title}
                     </button>
+                      
+                      {/* Mobile Pills - Just below active title */}
+                      {isMobile && isActive && (
+                        <div className="mt-4 flex flex-wrap gap-2 animate-fadeIn">
+                          {slide.pills?.map((pill, pIdx) => (
+                            <div 
+                              key={pIdx}
+                              className="px-4 py-2 rounded-full border text-[10px] tracking-widest"
+                              style={{ 
+                                borderColor: pIdx === 0 ? 'black' : 'black', // Using black for visibility on light bg
+                                color: 'black',
+                                opacity: 0.8 
+                              }}
+                            >
+                              {pill}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -259,16 +359,45 @@ const Section2 = ({ t }) => {
                 }`}
               />
             ))}
+
+            {/* Previous and Next buttons - above images and mountain */}
+            {!isMobile && !isTablet && (
+            <div className="absolute top-8 right-8 z-50 flex items-center gap-10 text-xs tracking-widest" style={{ color: '#FFFBE9' }}>
+              <button
+                type="button"
+                onClick={() => goToSlide(activeIndexRef.current - 1)}
+                className="hover:opacity-80 transition-opacity"
+                style={{ color: '#FFFBE9' }}
+              >
+                ← {t('common.previous')}
+              </button>
+              <button
+                type="button"
+                onClick={() => goToSlide(activeIndexRef.current + 1)}
+                className="hover:opacity-80 transition-opacity"
+                style={{ color: '#FFFBE9' }}
+              >
+                {t('common.next')} →
+              </button>
+            </div>
+            )}
+
+
+
           </div>
 
-          {/* Bottom controls (above the PNG) */}
-          <div className="absolute z-30 bottom-18 left-16 right-16 text-[#FFFBE9]">
+          {/* Bottom controls */}
+          {!isMobile && (
+          <div className="absolute z-30 bottom-24 left-16 right-16">
             <div className="flex items-end justify-between gap-6">
               <div className="flex flex-wrap items-center gap-3 lg:max-w-[45%]">
                 {slides[activeIndex]?.pills?.[0] && (
                   <button
                     type="button"
-                    className="px-6 py-3 rounded-full border border-[#FFFBE9]/60 text-xs tracking-widest hover:border-[#FFFBE9] transition-colors"
+                    className="px-6 py-3 rounded-full border text-xs tracking-widest transition-colors"
+                    style={{ borderColor: 'black', color: 'black' }}
+                    onMouseEnter={(e) => e.target.style.opacity = '0.8'}
+                    onMouseLeave={(e) => e.target.style.opacity = '1'}
                   >
                     {slides[activeIndex].pills[0]}
                   </button>
@@ -276,29 +405,96 @@ const Section2 = ({ t }) => {
                 {slides[activeIndex]?.pills?.[1] && (
                   <button
                     type="button"
-                    className="px-6 py-3 rounded-full border border-[#FFFBE9]/60 text-xs tracking-widest hover:border-[#FFFBE9] transition-colors"
+                    className="px-6 py-3 rounded-full border text-xs tracking-widest transition-colors"
+                    style={{ borderColor: '#FFFBE9', color: '#FFFBE9' }}
+                    onMouseEnter={(e) => e.target.style.opacity = '0.8'}
+                    onMouseLeave={(e) => e.target.style.opacity = '1'}
                   >
                     {slides[activeIndex].pills[1]}
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+          )}
 
-              <div className="flex items-center gap-10 text-xs tracking-widest text-[#FFFBE9]/85">
-                <button
-                  type="button"
-                  onClick={() => goToSlide(activeIndexRef.current - 1)}
-                  className="hover:text-[#FFFBE9] transition-colors"
-                >
-                  ← {t('common.previous')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => goToSlide(activeIndexRef.current + 1)}
-                  className="hover:text-[#FFFBE9] transition-colors"
-                >
-                  {t('common.next')} →
-                </button>
-              </div>
+          {/* Mountain image inside Our Products section - above images, below controls */}
+          <div className="absolute left-0 w-full flex items-center justify-center z-20" style={{ bottom: isMobile ? '-40px' : isTablet ? '-150px' : '-300px' }}>
+            <img
+              src={`${import.meta.env.BASE_URL}Section2.png`}
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none select-none w-full h-auto object-cover"
+            />
+          </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Entry buffer for About Us section (1vh) */}
+      <div style={{ height: `${STICKY_START_OFFSET_VH}vh` }} />
+      {/* 3D Model Section */}
+      <div 
+        ref={modelSectionRef}
+        className="relative w-full transition-colors duration-300" 
+        style={{ 
+          height: '400vh',
+          background: `linear-gradient(to bottom, transparent, ${bgGradient}), url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h80v80H0z' fill='none' stroke='%23E5E7EB' stroke-opacity='0.4' stroke-width='1'/%3E%3C/svg%3E")`
+        }}
+      >
+        <div className="sticky top-0 h-screen w-full flex flex-col justify-center overflow-hidden z-50">
+          {/* About Us Title */}
+          <div 
+            ref={textRef}
+            className="absolute z-0 w-full flex flex-col items-center justify-center pointer-events-none transition-transform duration-75 ease-out text-center px-4" 
+            style={{ top: '40%', transform: 'translateY(-50%)', opacity: 1 }}
+          >
+            <div 
+              className={`font-bold tracking-tight leading-none mb-4 sm:mb-6 transition-all duration-300 ${
+                isSmallMobile ? 'text-4xl' : isMobile ? 'text-5xl' : isTablet ? 'text-7xl' : 'text-8xl'
+              }`} 
+              style={{ color: '#A53223' }}
+            >
+              {t('homepage.feelSingingBowl')}
+            </div>
+            <p 
+              className={`max-w-2xl font-extralight transition-all duration-300 ${
+                isSmallMobile ? 'text-sm' : isMobile ? 'text-base' : 'text-xl md:text-2xl'
+              }`} 
+              style={{ color: '#000000' }}
+            >
+              {t('homepage.singingBowlDesc')}
+            </p>
+          </div>
+
+          <div className="w-full px-4 sm:px-6 lg:px-8 relative z-10 h-full flex items-center justify-center">
+          {/* Centered 3D model */}
+            <div 
+              ref={bowlContainerRef}
+              className="rounded-2xl overflow-hidden flex justify-center items-center transition-colors duration-300" 
+              style={{ 
+                width: '100%', 
+                maxWidth: isMobile ? '100%' : '1000px', 
+                transform: 'translateY(100%)', 
+                opacity: 0,
+              }}
+            >
+              <model-viewer
+                ref={modelViewerRef}
+                src={`${import.meta.env.BASE_URL}gallery/tibetsingingbowl.mr.glb`}
+                alt="Tibetan Singing Bowl 3D Model"
+                camera-controls={false}
+                shadow-intensity="0.8"
+                environment-image="neutral"
+                disable-zoom
+                interaction-policy="allow-when-focused"
+                style={{ 
+                  width: '100%', 
+                  height: isMobile ? '400px' : isTablet ? '600px' : '800px', 
+                  background: 'transparent' 
+                }}
+                camera-orbit="0deg 75deg 105%"
+              />
             </div>
           </div>
         </div>
