@@ -62,6 +62,29 @@
       "title": "Contact Us",
       "description": "Get in touch with us to learn more about our collection, inquire about custom pieces, or schedule a consultation."
     }
+  },
+  "section3": {
+    "trustedBy": "Handcrafted with Love and Purpose",
+    "testimonials": [
+      {
+        "name": "Singing Bowls",
+        "image": "gallery/Section3_1.png",
+        "quote": "Hand-hammered bowls with deep, balanced resonance for meditation and sound healing."
+      },
+      {
+        "name": "Thangka Art",
+        "image": "gallery/Section3_3.png",
+        "quote": "Hand-painted sacred artworks created using traditional iconography and proportions."
+      },
+      {
+        "name": "Sacred Ornaments",
+        "image": "gallery/Section3_2.png",
+        "quote": "Artisan-crafted adornments carrying symbolic meaning drawn from Himalayan spiritual culture."
+      }
+    ]
+  },
+  "section4": {
+    "headline": "A Journey from the Himalayas to Your Space",
+    "supportingText": "Born in the Himalayan region, each creation carries the stillness, depth, and spirit of its origin—bringing a sense of calm and authenticity into modern spaces."
   }
 }
-

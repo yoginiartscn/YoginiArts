@@ -22,7 +22,7 @@ const Gallery = () => {
       <section className="w-full py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
+            <h1 className="h1-heading text-4xl md:text-6xl font-bold text-gray-900 mb-6">
               {t('gallery.title')}
             </h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
@@ -45,7 +45,7 @@ const Gallery = () => {
                   <span className="text-6xl">🖼️</span>
                 </div>
                 <div className="p-6">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  <h3 className="h3-text text-xl font-bold text-gray-900 mb-2">
                     {item.title}
                   </h3>
                   <p className="text-gray-600 text-sm">

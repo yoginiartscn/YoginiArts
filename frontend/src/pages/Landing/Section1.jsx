@@ -28,7 +28,7 @@ const Section1 = ({ t }) => {
               <p className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl text-white mb-4 line-clamp-2 sm:line-clamp-none sm:whitespace-nowrap">
                 {t('homepage.heroText')}
               </p>
-              <h1 className="text-4xl sm:text-5xl md:text-[5.5rem] font-bold text-white mb-8">
+              <h1 className="h1-heading text-4xl sm:text-5xl md:text-[5.5rem] font-bold text-white mb-8">
                 {t('homepage.heroHeading')}
               </h1>
 

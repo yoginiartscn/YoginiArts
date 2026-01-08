@@ -62,6 +62,30 @@
       "title": "联系我们",
       "description": "与我们取得联系，了解更多关于我们的收藏，咨询定制作品，或预约咨询。"
     }
+  },
+  "section3": {
+    "trustedBy": "以爱与初心手工打造",
+    "testimonials": [
+      {
+        "name": "颂钵",
+        "image": "gallery/Section3_1.png",
+        "quote": "手工锤制颂钵，声音深沉均衡，适用于冥想与音疗。"
+      },
+      {
+        "name": "唐卡艺术",
+        "image": "gallery/Section3_3.png",
+        "quote": "依循传统图像学与比例手工绘制的神圣唐卡作品。"
+      },
+      {
+        "name": "神圣饰品",
+        "image": "gallery/Section3_2.png",
+        "quote": "匠人手作饰品，承载源自喜马拉雅灵性文化的象征意义。"
+      }
+    ]
+  },
+  "section4": {
+    "headline": "从喜马拉雅到您的空间之旅",
+    "supportingText": "诞生于喜马拉雅地区，每一件作品都承载着其起源的宁静、深度和精神——为现代空间带来平静与真实感。"
   }
 }
 

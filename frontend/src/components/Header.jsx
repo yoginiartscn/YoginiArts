@@ -44,10 +44,28 @@ const Header = () => {
 
   // Allow sections to force-hide the header (e.g., Section 2).
   useEffect(() => {
+    // Keep track of which sections want to hide the header
+    const hiddenSections = new Set();
+
     const onForceHidden = (e) => {
-      const hidden = Boolean(e?.detail?.hidden);
-      setForceHidden(hidden);
+      const { id, hidden } = e.detail || {};
+      
+      // Handle legacy events (no ID) - though we updated S2/S3, safeguard just in case
+      if (!id) {
+        setForceHidden(Boolean(hidden));
+        if (Boolean(hidden)) setIsMobileMenuOpen(false);
+        return;
+      }
+
       if (hidden) {
+        hiddenSections.add(id);
+      } else {
+        hiddenSections.delete(id);
+      }
+
+      const shouldHide = hiddenSections.size > 0;
+      setForceHidden(shouldHide);
+      if (shouldHide) {
         setIsMobileMenuOpen(false);
       }
     };

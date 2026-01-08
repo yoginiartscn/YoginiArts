@@ -12,7 +12,7 @@ const Contact = () => {
       <section className="w-full py-20 bg-white">
         <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
+            <h1 className="h1-heading text-4xl md:text-6xl font-bold text-gray-900 mb-6">
               {t('navigation.contactUs')}
             </h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">

@@ -73,7 +73,7 @@ const Section2 = ({ t }) => {
     if (!el) return;
 
     const notify = (hidden) => {
-      window.dispatchEvent(new CustomEvent('header:forceHidden', { detail: { hidden } }));
+      window.dispatchEvent(new CustomEvent('header:forceHidden', { detail: { id: 'Section2', hidden } }));
     };
 
     // Ensure header is NOT force-hidden unless Section 2 is actually visible.
@@ -85,7 +85,7 @@ const Section2 = ({ t }) => {
         const hidden = Boolean(entry?.isIntersecting);
         notify(hidden);
       },
-      { threshold: 0.05 }
+      { threshold: 0 }
     );
 
     observer.observe(el);

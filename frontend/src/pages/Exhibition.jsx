@@ -37,7 +37,7 @@ const Exhibition = () => {
       <section className="w-full py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
+            <h1 className="h1-heading text-4xl md:text-6xl font-bold text-gray-900 mb-6">
               {t('exhibition.title')}
             </h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
@@ -58,7 +58,7 @@ const Exhibition = () => {
               >
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-4">
                   <div>
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                    <h2 className="h2-text text-2xl font-bold text-gray-900 mb-2">
                       {exhibition.title}
                     </h2>
                     <div className="flex flex-col md:flex-row md:gap-4 text-gray-600">

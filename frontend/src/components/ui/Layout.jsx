@@ -24,7 +24,7 @@ const Layout = ({ children, showNavigation = false }) => {
             <div className="flex justify-between items-center h-16">
               {/* Logo */}
               <div className="flex-shrink-0 flex items-center">
-                <h1 className="text-xl font-bold text-primary-700">Yogini Arts</h1>
+                <h1 className="h1-heading text-xl font-bold text-primary-700">Yogini Arts</h1>
               </div>
 
               {/* Language Toggle */}

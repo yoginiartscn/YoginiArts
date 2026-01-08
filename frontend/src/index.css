@@ -28,6 +28,70 @@
   font-style: normal;
 }
 
+/* Inter font utility classes (weights 100–900) */
+.inter-100 {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 100;
+  font-style: normal;
+}
+
+.inter-200 {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 200;
+  font-style: normal;
+}
+
+.inter-300 {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 300;
+  font-style: normal;
+}
+
+.inter-400 {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.inter-500 {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-style: normal;
+}
+
+.inter-600 {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-style: normal;
+}
+
+.inter-700 {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.inter-800 {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 800;
+  font-style: normal;
+}
+
+.inter-900 {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 900;
+  font-style: normal;
+}
+
 /* Chinese Fonts */
 .noto-serif-hk {
   font-family: "Noto Serif HK", serif;
@@ -41,111 +105,41 @@
   font-style: normal;
 }
 
-/* Language-based font application */
-html[lang="en"] h1,
-html[lang="en"] .h1-heading {
+/* Heading font classes (fonts are set per component; manage weights in component code) */
+.h1-heading {
   font-family: "Playfair Display", serif;
   font-optical-sizing: auto;
-  font-weight: 700;
   font-style: normal;
 }
 
-html[lang="en"] h2,
-html[lang="en"] h3,
-html[lang="en"] h4,
-html[lang="en"] h5,
-html[lang="en"] h6,
-html[lang="en"] p,
-html[lang="en"] body,
-html[lang="en"] span,
-html[lang="en"] div,
-html[lang="en"] a,
-html[lang="en"] button,
-html[lang="en"] input,
-html[lang="en"] textarea,
-html[lang="en"] label,
-html[lang="en"] .h2-text,
-html[lang="en"] .h3-text,
-html[lang="en"] .h4-text,
-html[lang="en"] .h5-text {
+.h2-text {
   font-family: "Inter", sans-serif;
   font-optical-sizing: auto;
   font-style: normal;
 }
 
-html[lang="zh"] h1,
-html[lang="zh"] .h1-heading {
-  font-family: "Noto Serif HK", serif;
-  font-optical-sizing: auto;
-  font-weight: 700;
-  font-style: normal;
-}
-
-html[lang="zh"] h2,
-html[lang="zh"] h3,
-html[lang="zh"] h4,
-html[lang="zh"] h5,
-html[lang="zh"] h6,
-html[lang="zh"] p,
-html[lang="zh"] body,
-html[lang="zh"] span,
-html[lang="zh"] div,
-html[lang="zh"] a,
-html[lang="zh"] button,
-html[lang="zh"] input,
-html[lang="zh"] textarea,
-html[lang="zh"] label,
-html[lang="zh"] .h2-text,
-html[lang="zh"] .h3-text,
-html[lang="zh"] .h4-text,
-html[lang="zh"] .h5-text {
-  font-family: "Noto Sans TC", sans-serif;
+.h3-text {
+  font-family: "Inter", sans-serif;
   font-optical-sizing: auto;
   font-style: normal;
 }
 
-/* Font weights for different elements */
-h1, .h1-heading {
-  font-weight: 700;
+.h4-text {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
 }
 
-h2, .h2-text {
-  font-weight: 600;
+.h5-text {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
 }
 
-h3, .h3-text {
-  font-weight: 600;
-}
-
-h4, .h4-text {
-  font-weight: 500;
-}
-
-h5, .h5-text {
-  font-weight: 500;
-}
-
-h6 {
-  font-weight: 500;
-}
-
-p, body, span, div, a, button, input, textarea, label {
-  font-weight: 400;
-}
-
-/* Bold text */
-strong, b, .font-bold {
-  font-weight: 700;
-}
-
-/* Medium weight */
-.font-medium {
-  font-weight: 500;
-}
-
-/* Semibold */
-.font-semibold {
-  font-weight: 600;
+.h6-text {
+  font-family: "Inter", sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
 }
 
 /* Custom scrollbar */
