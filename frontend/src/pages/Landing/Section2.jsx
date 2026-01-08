@@ -62,6 +62,13 @@ const Section2 = ({ t }) => {
 
   // Force-hide the global header while Section 2 is visible.
   useEffect(() => {
+    // Preload the 3D model
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'fetch';
+    link.href = `${import.meta.env.BASE_URL}gallery/tibetsingingbowl.mr.glb`;
+    document.head.appendChild(link);
+
     const el = sectionRef.current;
     if (!el) return;
 
@@ -483,6 +490,9 @@ const Section2 = ({ t }) => {
                 ref={modelViewerRef}
                 src={`${import.meta.env.BASE_URL}gallery/tibetsingingbowl.mr.glb`}
                 alt="Tibetan Singing Bowl 3D Model"
+                loading="eager"
+                reveal="auto"
+                poster={`${import.meta.env.BASE_URL}gallery/Singingbowl.jpg`}
                 camera-controls={false}
                 shadow-intensity="0.8"
                 environment-image="neutral"
