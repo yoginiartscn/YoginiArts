@@ -4,14 +4,11 @@ const Section1 = ({ t }) => {
       {/* Hero Section - Full width with rounded top corners only */}
       <section className="w-full h-screen relative flex items-center justify-center" style={{ backgroundColor: '#FFFBE9' }}>
         <div className="relative w-full h-full rounded-t-[3.3rem] overflow-hidden" style={{ backgroundColor: '#FFFBE9' }}>
-          {/* Background Video - Full width and height */}
+          {/* Background Image - Full width and height */}
           <div className="absolute inset-0" style={{ top: '-2rem' }}>
-            <video
-              src={`${import.meta.env.BASE_URL}Introvideo.mp4`}
-              autoPlay
-              loop
-              muted
-              playsInline
+            <img
+              src={`${import.meta.env.BASE_URL}Homebg.jpg`}
+              alt="Hero Background"
               className="w-full h-full object-cover"
             />
           </div>
