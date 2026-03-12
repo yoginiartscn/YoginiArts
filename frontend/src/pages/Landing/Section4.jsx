@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useBreakpoint from '../../hooks/useBreakpoint';
 
 const Section4 = ({ t }) => {
+  const navigate = useNavigate();
   const { isMobile } = useBreakpoint();
   const sectionRef = useRef(null);
   const [offsetY, setOffsetY] = useState(0);
@@ -77,6 +79,13 @@ const Section4 = ({ t }) => {
             <p className={`max-w-2xl leading-relaxed tracking-wide font-[200] ${isMobile ? 'text-base' : 'text-xl md:text-2xl'}`}>
             {t('homepage.section4.supportingText')}
             </p>
+
+            <button
+              onClick={() => navigate('/products')}
+              className="mt-4 px-10 py-4 rounded-full bg-[#A53223] text-[#FFFBE9] text-sm font-medium uppercase tracking-[0.2em] transition-all duration-300 hover:bg-[#c13d2b] hover:shadow-[0_0_30px_rgba(165,50,35,0.4)]"
+            >
+              {t('homepage.section4.cta')}
+            </button>
         </div>
       </div>
     </section>
