@@ -1,13 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import Header from '../components/Header';
-import Footer from '../components/ui/Footer';
+import Header from '../../components/Header';
+import Footer from '../../components/ui/Footer';
 
 const CARD_COUNT = 16;
 const ANGLE_STEP = 360 / CARD_COUNT;
 const RADIUS = 880;
 
-const Gallery = () => {
+const Products = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -141,7 +141,13 @@ const Gallery = () => {
           </div>
         </div>
 
-        {/* 3D Outer Carousel */}
+        {/* ---- 3D Outer Carousel ---- */}
+        {/*
+          The viewer is INSIDE the cylinder looking out.
+          Cards are on the outer ring. The front arc is visible,
+          side cards extend past the viewport edges (clipped by overflow:hidden).
+          Back-facing cards are hidden.
+        */}
         <div
           style={{
             width: '100vw',
@@ -155,6 +161,7 @@ const Gallery = () => {
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
+          {/* The rotating ring — centered in the viewport */}
           <div
             ref={ringRef}
             style={{
@@ -177,10 +184,12 @@ const Gallery = () => {
                     position: 'absolute',
                     width: 'clamp(220px, 22vw, 300px)',
                     height: 'clamp(300px, 36vw, 420px)',
+                    /* center each card on the 0,0 origin */
                     left: '0',
                     top: '0',
                     marginLeft: 'clamp(-110px, -11vw, -150px)',
                     marginTop: 'clamp(-150px, -18vw, -210px)',
+                    /* place on the outer ring, face outward */
                     transform: `rotateY(${angle}deg) translateZ(${RADIUS}px)`,
                     backfaceVisibility: 'hidden',
                     opacity: isVisible ? 1 : 0,
@@ -284,4 +293,4 @@ const Gallery = () => {
   );
 };
 
-export default Gallery;
+export default Products;

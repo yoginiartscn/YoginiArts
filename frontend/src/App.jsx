@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import Layout from './components/ui/Layout';
 import HomePage from './pages/Landing/HomePage';
 import About from './pages/About';
-import Products from './pages/Products';
+import Products from './pages/Products/Products';
 import Gallery from './pages/Gallery';
 import Exhibition from './pages/Exhibition';
 import Contact from './pages/Contact';
