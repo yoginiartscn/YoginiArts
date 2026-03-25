@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from './useAuth';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5300/api';
+const API_URL = import.meta.env.VITE_API_URL
+  || (import.meta.env.PROD ? `${window.location.origin}/api` : 'http://localhost:5300/api');
 
 export function useApi() {
   const { token, logout } = useAuth();

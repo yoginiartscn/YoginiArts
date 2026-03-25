@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const bodyParser = require('body-parser');
+const path = require('path');
 const config = require('./config/environment');
 const { errorHandler, notFoundHandler } = require('./middleware/validation');
 
@@ -100,12 +101,20 @@ app.get('/', (req, res) => {
 app.use('/api/forms', formsRoutes);
 app.use('/api/inventory', inventoryRoutes);
 
-// Catch-all route for undefined API routes
+// Serve frontend static files in production
+const distPath = path.join(__dirname, '..', 'dist');
+if (isProduction) {
+  app.use(express.static(distPath));
+}
+
+// Catch-all route — serve frontend index.html for non-API routes in production
 app.all('*', (req, res, next) => {
   if (req.path.startsWith('/api')) {
     return next();
   }
-  // Non-API routes return 404 - frontend is served separately
+  if (isProduction) {
+    return res.sendFile(path.join(distPath, 'index.html'));
+  }
   res.status(404).json({
     success: false,
     message: `Route ${req.originalUrl} not found. This is an API-only server.`
