@@ -8,6 +8,8 @@ const { errorHandler, notFoundHandler } = require('./middleware/validation');
 
 // Import routes
 const formsRoutes = require('./routes/forms');
+const inventoryRoutes = require('./inventory/routes');
+const sequelize = require('./config/postgres');
 
 // Initialize Express app
 const app = express();
@@ -96,6 +98,7 @@ app.get('/', (req, res) => {
 
 // API Routes
 app.use('/api/forms', formsRoutes);
+app.use('/api/inventory', inventoryRoutes);
 
 // Catch-all route for undefined API routes
 app.all('*', (req, res, next) => {
@@ -150,6 +153,9 @@ mongoose.connection.on('error', (err) => {
 const gracefulShutdown = () => {
   console.log('\n🛑 Shutting down gracefully...');
   
+  if (sequelize) {
+    sequelize.close().then(() => console.log('📊 PostgreSQL connection closed'));
+  }
   mongoose.connection.close(() => {
     console.log('📊 MongoDB connection closed');
     process.exit(0);
@@ -163,7 +169,20 @@ process.on('SIGINT', gracefulShutdown);
 // Start server
 const startServer = async () => {
   await connectDB();
-  
+
+  // Connect to PostgreSQL (Inventory system)
+  if (sequelize) {
+    try {
+      await sequelize.authenticate();
+      console.log('✅ PostgreSQL connected successfully');
+      await sequelize.sync({ alter: true });
+      console.log('📊 Inventory tables synced');
+    } catch (pgError) {
+      console.error('❌ PostgreSQL connection failed:', pgError.message);
+      console.log('🔄 Server will continue without PostgreSQL (Inventory features disabled)');
+    }
+  }
+
   const server = app.listen(config.PORT, () => {
     console.log(`\n🚀 Server running on port ${config.PORT}`);
     console.log(`📱 Environment: ${config.NODE_ENV}`);

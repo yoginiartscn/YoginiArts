@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+
+const InventoryApp = lazy(() => import('./inventory/InventoryApp'));
 import { useTranslation } from 'react-i18next';
 import Layout from './components/ui/Layout';
 import HomePage from './pages/Landing/HomePage';
@@ -52,38 +54,35 @@ function App() {
 
   return (
     <Router basename={basename}>
-      <Layout showNavigation={false}>
-        <Routes>
-          <Route 
-            path="/" 
-            element={<HomePage onCardSelect={handleCardSelect} />} 
-          />
-          <Route 
-            path="/about" 
-            element={<About />} 
-          />
-          <Route 
-            path="/products" 
-            element={<Products />} 
-          />
-          <Route 
-            path="/gallery" 
-            element={<Gallery />} 
-          />
-          <Route 
-            path="/exhibition" 
-            element={<Exhibition />} 
-          />
-          <Route
-            path="/contact"
-            element={<Contact />}
-          />
-          <Route 
-            path="/*" 
-            element={<HomePage onCardSelect={handleCardSelect} />} 
-          />
-        </Routes>
-      </Layout>
+      <Routes>
+        {/* Inventory Management - independent layout (no main site nav/footer) */}
+        <Route
+          path="/inventorymanagement/*"
+          element={
+            <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-700"></div></div>}>
+              <InventoryApp />
+            </Suspense>
+          }
+        />
+
+        {/* Main Website */}
+        <Route
+          path="/*"
+          element={
+            <Layout showNavigation={false}>
+              <Routes>
+                <Route path="/" element={<HomePage onCardSelect={handleCardSelect} />} />
+                <Route path="/about" element={<About />} />
+                <Route path="/products" element={<Products />} />
+                <Route path="/gallery" element={<Gallery />} />
+                <Route path="/exhibition" element={<Exhibition />} />
+                <Route path="/contact" element={<Contact />} />
+                <Route path="/*" element={<HomePage onCardSelect={handleCardSelect} />} />
+              </Routes>
+            </Layout>
+          }
+        />
+      </Routes>
     </Router>
   );
 }
