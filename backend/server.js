@@ -83,29 +83,25 @@ app.use((req, res, next) => {
   next();
 });
 
+// Serve frontend static files in production
+const distPath = path.join(__dirname, '..', 'dist');
+if (isProduction) {
+  app.use(express.static(distPath));
+}
+
 // Health check endpoint
-app.get('/', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({
     success: true,
-    message: 'Yogini Arts Backend is running! 🚀',
+    message: 'Yogini Arts Backend is running!',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
-    endpoints: {
-      forms: '/api/forms',
-      health: '/api/forms/health'
-    }
   });
 });
 
 // API Routes
 app.use('/api/forms', formsRoutes);
 app.use('/api/inventory', inventoryRoutes);
-
-// Serve frontend static files in production
-const distPath = path.join(__dirname, '..', 'dist');
-if (isProduction) {
-  app.use(express.static(distPath));
-}
 
 // Catch-all route — serve frontend index.html for non-API routes in production
 app.all('*', (req, res, next) => {
