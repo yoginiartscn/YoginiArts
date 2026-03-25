@@ -31,6 +31,10 @@ dist-ssr
 # Temporary files
 temp_reference
 
+# Uploaded files
+backend/uploads/products/*
+!backend/uploads/products/.gitkeep
+
 
 
 

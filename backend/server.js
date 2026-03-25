@@ -83,6 +83,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Serve uploaded files (product images etc.)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Serve frontend static files in production
 const distPath = path.join(__dirname, '..', 'dist');
 if (isProduction) {

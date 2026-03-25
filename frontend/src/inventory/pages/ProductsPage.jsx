@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Quagga from '@ericblade/quagga2';
 import { useApi } from '../hooks/useApi';
-import { productsApi } from '../utils/inventoryApi';
+import { productsApi, getImageUrl } from '../utils/inventoryApi';
 
 export default function ProductsPage() {
   const api = useApi();
@@ -32,6 +32,7 @@ export default function ProductsPage() {
   const [duplicateQty, setDuplicateQty] = useState(1);
   const categoryOptions = ['Singing Bowl', 'Thanka', 'Jewelleries', 'Thanka Locket'];
   const productImageRef = useRef(null);
+  const [imageFile, setImageFile] = useState(null);
 
   const scanInputRef = useRef(null);
   const scanBufferRef = useRef('');
@@ -60,6 +61,7 @@ export default function ProductsPage() {
   const resetForm = () => {
     setForm({ name: '', description: '', image_url: '', barcode: '', cost_price: '', retail_price: '', wholesale_price: '', category: '', weight: '', size: '' });
     setImagePreview(null);
+    setImageFile(null);
     setEditingProduct(null);
     setShowForm(false);
   };
@@ -77,7 +79,8 @@ export default function ProductsPage() {
       weight: product.weight || '',
       size: product.size || '',
     });
-    setImagePreview(product.image_url || null);
+    setImagePreview(getImageUrl(product.image_url) || null);
+    setImageFile(null);
     setEditingProduct(product);
     setShowForm(true);
   };
@@ -86,9 +89,9 @@ export default function ProductsPage() {
     e.preventDefault();
     try {
       if (editingProduct) {
-        await productsApi.update(api, editingProduct.id, form);
+        await productsApi.update(api, editingProduct.id, form, imageFile);
       } else {
-        await productsApi.create(api, form);
+        await productsApi.create(api, form, imageFile);
       }
       resetForm();
       fetchProducts();
@@ -708,7 +711,7 @@ export default function ProductsPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       {matchedProduct.image_url ? (
-                        <img src={matchedProduct.image_url} alt={matchedProduct.name} className="w-14 h-14 rounded-[1.2rem] object-cover flex-shrink-0" />
+                        <img src={getImageUrl(matchedProduct.image_url)} alt={matchedProduct.name} className="w-14 h-14 rounded-[1.2rem] object-cover flex-shrink-0" />
                       ) : (
                         <div className="w-14 h-14 bg-blue-100 rounded-[1.2rem] flex items-center justify-center text-blue-400 text-xs flex-shrink-0">N/A</div>
                       )}
@@ -820,9 +823,8 @@ export default function ProductsPage() {
                     onChange={(e) => {
                       const file = e.target.files[0];
                       if (file) {
-                        const url = URL.createObjectURL(file);
-                        setImagePreview(url);
-                        setForm({ ...form, image_url: url });
+                        setImagePreview(URL.createObjectURL(file));
+                        setImageFile(file);
                       }
                     }}
                   />
@@ -1001,10 +1003,10 @@ export default function ProductsPage() {
                   <td className="px-4 py-3">
                     {p.image_url ? (
                       <img
-                        src={p.image_url}
+                        src={getImageUrl(p.image_url)}
                         alt={p.name}
                         className="w-10 h-10 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => setPreviewImage(p.image_url)}
+                        onClick={() => setPreviewImage(getImageUrl(p.image_url))}
                       />
                     ) : (
                       <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">

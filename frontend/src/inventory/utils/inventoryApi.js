@@ -1,11 +1,46 @@
 // Centralized API call functions used by pages
 // These are helper functions that accept an api (axios) instance
 
+const API_BASE = import.meta.env.VITE_API_URL
+  || (import.meta.env.PROD ? '' : 'http://localhost:5300');
+
+// Server origin for static files (uploads) — strip /api suffix from API_BASE
+const SERVER_ORIGIN = API_BASE.replace(/\/api\/?$/, '');
+
+// Resolve image URLs — converts relative /uploads/... paths to full URLs in development
+export const getImageUrl = (url) => {
+  if (!url) return null;
+  // blob: URLs are ephemeral and invalid after the session that created them
+  if (url.startsWith('blob:')) return null;
+  if (url.startsWith('http')) return url;
+  return `${SERVER_ORIGIN}${url}`;
+};
+
 export const productsApi = {
   getAll: (api, search = '') => api.get(`/products${search ? `?search=${search}` : ''}`),
   getById: (api, id) => api.get(`/products/${id}`),
-  create: (api, data) => api.post('/products', data),
-  update: (api, id, data) => api.put(`/products/${id}`, data),
+  create: (api, data, imageFile) => {
+    if (imageFile) {
+      const formData = new FormData();
+      formData.append('image', imageFile);
+      Object.entries(data).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && key !== 'image_url') formData.append(key, val);
+      });
+      return api.post('/products', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    }
+    return api.post('/products', data);
+  },
+  update: (api, id, data, imageFile) => {
+    if (imageFile) {
+      const formData = new FormData();
+      formData.append('image', imageFile);
+      Object.entries(data).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && key !== 'image_url') formData.append(key, val);
+      });
+      return api.put(`/products/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    }
+    return api.put(`/products/${id}`, data);
+  },
   delete: (api, id) => api.delete(`/products/${id}`),
 };
 

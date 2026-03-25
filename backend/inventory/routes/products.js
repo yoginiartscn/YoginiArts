@@ -1,9 +1,38 @@
 const express = require('express');
 const { Op } = require('sequelize');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { Product, Location, Inventory } = require('../models');
 const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Multer config for product images
+const uploadsDir = path.join(__dirname, '..', '..', 'uploads', 'products');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const allowed = /jpeg|jpg|png|gif|webp/;
+    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
+    const mime = allowed.test(file.mimetype);
+    if (ext && mime) return cb(null, true);
+    cb(new Error('Only image files are allowed'));
+  },
+});
 
 // GET / - list all products
 router.get('/', authenticate, async (req, res) => {
@@ -40,8 +69,8 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-// POST /
-router.post('/', authenticate, async (req, res) => {
+// POST / - create product (with optional image upload)
+router.post('/', authenticate, upload.single('image'), async (req, res) => {
   try {
     const { name, description, image_url, barcode, cost_price, retail_price, wholesale_price, category, weight, size } = req.body;
 
@@ -49,10 +78,16 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Product name is required' });
     }
 
+    // Use uploaded file path, or provided URL (ignore ephemeral blob: URLs)
+    let finalImageUrl = (image_url && !image_url.startsWith('blob:')) ? image_url : null;
+    if (req.file) {
+      finalImageUrl = `/uploads/products/${req.file.filename}`;
+    }
+
     const product = await Product.create({
       name,
       description,
-      image_url,
+      image_url: finalImageUrl,
       barcode: barcode || null,
       cost_price: cost_price || 0,
       retail_price: retail_price || 0,
@@ -110,8 +145,8 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
-// PUT /:id
-router.put('/:id', authenticate, async (req, res) => {
+// PUT /:id - update product (with optional image upload)
+router.put('/:id', authenticate, upload.single('image'), async (req, res) => {
   try {
     const product = await Product.findByPk(req.params.id);
     if (!product) {
@@ -120,10 +155,21 @@ router.put('/:id', authenticate, async (req, res) => {
 
     const { name, description, image_url, barcode, cost_price, retail_price, wholesale_price, category, weight, size } = req.body;
 
+    // Use uploaded file, or provided URL, or keep existing (ignore ephemeral blob: URLs)
+    let finalImageUrl = image_url !== undefined ? (image_url.startsWith('blob:') ? product.image_url : image_url) : product.image_url;
+    if (req.file) {
+      finalImageUrl = `/uploads/products/${req.file.filename}`;
+      // Delete old uploaded image if it was a local file
+      if (product.image_url && product.image_url.startsWith('/uploads/')) {
+        const oldPath = path.join(__dirname, '..', '..', product.image_url);
+        fs.unlink(oldPath, () => {}); // ignore errors
+      }
+    }
+
     await product.update({
       name: name !== undefined ? name : product.name,
       description: description !== undefined ? description : product.description,
-      image_url: image_url !== undefined ? image_url : product.image_url,
+      image_url: finalImageUrl,
       barcode: barcode !== undefined ? barcode : product.barcode,
       cost_price: cost_price !== undefined ? cost_price : product.cost_price,
       retail_price: retail_price !== undefined ? retail_price : product.retail_price,
@@ -149,6 +195,12 @@ router.delete('/:id', authenticate, async (req, res) => {
     const product = await Product.findByPk(req.params.id);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+
+    // Delete uploaded image file if local
+    if (product.image_url && product.image_url.startsWith('/uploads/')) {
+      const imgPath = path.join(__dirname, '..', '..', product.image_url);
+      fs.unlink(imgPath, () => {});
     }
 
     await product.destroy();

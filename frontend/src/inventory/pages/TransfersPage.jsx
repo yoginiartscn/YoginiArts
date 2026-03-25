@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
-import { productsApi, locationsApi, inventoryApi, reportsApi } from '../utils/inventoryApi';
+import { productsApi, locationsApi, inventoryApi, reportsApi, getImageUrl } from '../utils/inventoryApi';
 
 export default function TransfersPage() {
   const api = useApi();
@@ -29,6 +29,7 @@ export default function TransfersPage() {
     category: '', weight: '', size: '',
   });
   const [imagePreview, setImagePreview] = useState(null);
+  const [imageFile, setImageFile] = useState(null);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const categoryOptions = ['Singing Bowl', 'Thanka', 'Jewelleries', 'Thanka Locket'];
   const productImageRef = useRef(null);
@@ -222,6 +223,7 @@ export default function TransfersPage() {
   const resetProductForm = () => {
     setProductForm({ name: '', description: '', image_url: '', barcode: '', cost_price: '', retail_price: '', wholesale_price: '', category: '', weight: '', size: '' });
     setImagePreview(null);
+    setImageFile(null);
     setShowProductForm(false);
   };
 
@@ -239,7 +241,7 @@ export default function TransfersPage() {
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     try {
-      await productsApi.create(api, productForm);
+      await productsApi.create(api, productForm, imageFile);
       resetProductForm();
       // Refresh products list
       const res = await productsApi.getAll(api);
@@ -411,7 +413,7 @@ export default function TransfersPage() {
                       <tr key={item.product_id} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           {item.product_image ? (
-                            <img src={item.product_image} alt={item.product_name} className="w-10 h-10 rounded object-cover" />
+                            <img src={getImageUrl(item.product_image)} alt={item.product_name} className="w-10 h-10 rounded object-cover" />
                           ) : (
                             <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
                               N/A
@@ -639,9 +641,8 @@ export default function TransfersPage() {
                     onChange={(e) => {
                       const file = e.target.files[0];
                       if (file) {
-                        const url = URL.createObjectURL(file);
-                        setImagePreview(url);
-                        setProductForm({ ...productForm, image_url: url });
+                        setImagePreview(URL.createObjectURL(file));
+                        setImageFile(file);
                       }
                     }}
                   />

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
-import { inventoryApi, locationsApi, productsApi } from '../utils/inventoryApi';
+import { inventoryApi, locationsApi, productsApi, getImageUrl } from '../utils/inventoryApi';
 
 export default function InventoryPage() {
   const api = useApi();
@@ -207,7 +207,7 @@ export default function InventoryPage() {
                 <tr key={inv.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     {inv.product?.image_url ? (
-                      <img src={inv.product.image_url} alt={inv.product.name} className="w-10 h-10 rounded object-cover" />
+                      <img src={getImageUrl(inv.product.image_url)} alt={inv.product.name} className="w-10 h-10 rounded object-cover" />
                     ) : (
                       <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
                         N/A

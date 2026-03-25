@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApi } from '../hooks/useApi';
-import { productsApi, inventoryApi } from '../utils/inventoryApi';
+import { productsApi, inventoryApi, getImageUrl } from '../utils/inventoryApi';
 import BarcodeScanner from '../components/BarcodeScanner';
 
 export default function ScanPage() {
@@ -89,7 +89,7 @@ export default function ScanPage() {
             <div>
               <div className="space-y-3 mb-6">
                 {product.image_url && (
-                  <img src={product.image_url} alt={product.name} className="w-32 h-32 object-cover rounded-[1.2rem]" />
+                  <img src={getImageUrl(product.image_url)} alt={product.name} className="w-32 h-32 object-cover rounded-[1.2rem]" />
                 )}
                 <h3 className="text-xl font-bold">{product.name}</h3>
                 {product.description && (
