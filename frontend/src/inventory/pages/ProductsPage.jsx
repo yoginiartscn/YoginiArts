@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Quagga from '@ericblade/quagga2';
 import { useApi } from '../hooks/useApi';
-import { productsApi, getImageUrl } from '../utils/inventoryApi';
+import { productsApi, reportsApi, getImageUrl } from '../utils/inventoryApi';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function ProductsPage() {
   const api = useApi();
+  const { t, td } = useLanguage();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -28,6 +30,21 @@ export default function ProductsPage() {
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [deleteProduct, setDeleteProduct] = useState(null);
+
+  const [showSearch, setShowSearch] = useState(false);
+  const searchInputRef = useRef(null);
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef(null);
+
+  // Quotation download
+  const [showQuotation, setShowQuotation] = useState(false);
+  const [quotationCategory, setQuotationCategory] = useState('');
+  const [quotationPriceType, setQuotationPriceType] = useState('retail_price');
+  const [quotationCatOpen, setQuotationCatOpen] = useState(false);
+  const [quotationPriceOpen, setQuotationPriceOpen] = useState(false);
+  const quotationCatRef = useRef(null);
+  const quotationPriceRef = useRef(null);
   const [duplicateProduct, setDuplicateProduct] = useState(null);
   const [duplicateQty, setDuplicateQty] = useState(1);
   const categoryOptions = ['Singing Bowl', 'Thanka', 'Jewelleries', 'Thanka Locket'];
@@ -185,11 +202,12 @@ export default function ProductsPage() {
             setDuplicateProduct(matched);
             setDuplicateQty(1);
           } else {
+            const cat = getCategoryFromBarcode(barcode);
             setForm((prev) => ({
               ...prev,
               barcode,
-              name: '',
-              category: getCategoryFromBarcode(barcode),
+              name: cat === 'Singing Bowl' ? barcode : '',
+              category: cat,
             }));
             setShowForm(true);
           }
@@ -433,11 +451,12 @@ export default function ProductsPage() {
       setDuplicateProduct(matchedProduct);
       setDuplicateQty(1);
     } else {
+      const cat = getCategoryFromBarcode(scannedBarcode);
       setForm({
         ...form,
         barcode: scannedBarcode,
-        name: '',
-        category: getCategoryFromBarcode(scannedBarcode),
+        name: cat === 'Singing Bowl' ? scannedBarcode : '',
+        category: cat,
       });
       setShowForm(true);
     }
@@ -461,6 +480,52 @@ export default function ProductsPage() {
     }
   };
 
+  // Close filter dropdown on outside click
+  useEffect(() => {
+    if (!filterOpen) return;
+    const handleClick = (e) => {
+      if (filterRef.current && !filterRef.current.contains(e.target)) setFilterOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [filterOpen]);
+
+  // Close quotation dropdowns on outside click
+  useEffect(() => {
+    if (!quotationCatOpen && !quotationPriceOpen) return;
+    const handleClick = (e) => {
+      if (quotationCatOpen && quotationCatRef.current && !quotationCatRef.current.contains(e.target)) {
+        setQuotationCatOpen(false);
+      }
+      if (quotationPriceOpen && quotationPriceRef.current && !quotationPriceRef.current.contains(e.target)) {
+        setQuotationPriceOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [quotationCatOpen, quotationPriceOpen]);
+
+  const handleDownloadQuotation = async () => {
+    try {
+      const res = await reportsApi.exportQuotation(api, quotationCategory, quotationPriceType);
+      const catName = (quotationCategory || 'All_Products').replace(/\s+/g, '_');
+      const priceLabels = { cost_price: 'Cost_Price', retail_price: 'Retail_Price', wholesale_price: 'Wholesale_Price' };
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const fileName = `${catName}_${priceLabels[quotationPriceType] || 'Price'}_${dateStr}_quotation.xlsx`;
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setShowQuotation(false);
+    } catch (err) {
+      alert('Failed to download quotation');
+    }
+  };
+
   const handleManualBarcodeSubmit = () => {
     if (scannedBarcode.trim().length >= 1) {
       handleScanComplete();
@@ -470,32 +535,98 @@ export default function ProductsPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Products</h1>
-        <button
-          onClick={() => { resetForm(); setShowAddChoice(true); }}
-          className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
-        >
-          + Add Product
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search products by name, barcode..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
-        />
+        <h1 className="text-2xl font-bold text-gray-800">{t('products')}</h1>
+        <div className="flex items-center gap-2">
+          {/* Search toggle + slide-in input */}
+          <div className="relative flex items-center">
+            <button
+              onClick={() => {
+                const next = !showSearch;
+                setShowSearch(next);
+                if (next) {
+                  setTimeout(() => searchInputRef.current?.focus(), 310);
+                } else {
+                  setSearch('');
+                }
+              }}
+              className="w-10 h-10 flex items-center justify-center rounded-[1.2rem] bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors flex-shrink-0"
+            >
+              {showSearch ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              )}
+            </button>
+            <div
+              className={`overflow-hidden transition-all duration-300 ease-in-out ${showSearch ? 'w-64 opacity-100 ml-1' : 'w-0 opacity-0'}`}
+            >
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder={t('searchByNameBarcode')}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none text-sm"
+              />
+            </div>
+          </div>
+          {/* Filter dropdown */}
+          <div className="relative" ref={filterRef}>
+            <button
+              onClick={() => setFilterOpen(!filterOpen)}
+              className={`w-10 h-10 flex items-center justify-center rounded-[1.2rem] ${filterCategory ? 'bg-amber-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'} transition-colors flex-shrink-0`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </button>
+            {filterOpen && (
+              <div className="absolute right-0 z-10 mt-1 w-48 bg-white border border-gray-300 rounded-[1.2rem] shadow-lg overflow-hidden">
+                <ul>
+                  <li
+                    onClick={() => { setFilterCategory(''); setFilterOpen(false); }}
+                    className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${!filterCategory ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    {t('allCategories')}
+                  </li>
+                  {['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].map((cat) => (
+                    <li
+                      key={cat}
+                      onClick={() => { setFilterCategory(cat); setFilterOpen(false); }}
+                      className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${filterCategory === cat ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                    >
+                      {cat}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => { resetForm(); setShowAddChoice(true); }}
+            className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
+          >
+            {t('addProduct')}
+          </button>
+          <button
+            onClick={() => { setQuotationCategory(''); setQuotationPriceType('retail_price'); setShowQuotation(true); }}
+            className="px-4 py-2 bg-green-700 text-white rounded-[1.2rem] hover:bg-green-800 font-medium"
+          >
+            {t('downloadQuotation')}
+          </button>
+        </div>
       </div>
 
       {/* Add Product Choice Modal */}
       {showAddChoice && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm text-center">
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Add New Product</h2>
-            <p className="text-gray-500 text-sm mb-6">Choose how you'd like to add a product</p>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">{t('addNewProduct')}</h2>
+            <p className="text-gray-500 text-sm mb-6">{t('chooseHowToAdd')}</p>
             <div className="space-y-3">
               <button
                 onClick={() => { setShowAddChoice(false); setShowForm(true); }}
@@ -508,8 +639,8 @@ export default function ProductsPage() {
                   </svg>
                 </span>
                 <div className="text-left">
-                  <span className="block font-semibold text-gray-800">Add Manually</span>
-                  <span className="block text-xs text-gray-500">Fill in product details by hand</span>
+                  <span className="block font-semibold text-gray-800">{t('addManually')}</span>
+                  <span className="block text-xs text-gray-500">{t('fillByHand')}</span>
                 </div>
               </button>
               <button
@@ -527,8 +658,8 @@ export default function ProductsPage() {
                   </svg>
                 </span>
                 <div className="text-left">
-                  <span className="block font-semibold text-gray-800">Scan Barcode</span>
-                  <span className="block text-xs text-gray-500">Use USB/Bluetooth barcode scanner</span>
+                  <span className="block font-semibold text-gray-800">{t('scanBarcode')}</span>
+                  <span className="block text-xs text-gray-500">{t('useScanner')}</span>
                 </div>
               </button>
             </div>
@@ -536,7 +667,7 @@ export default function ProductsPage() {
               onClick={() => setShowAddChoice(false)}
               className="mt-5 text-sm text-gray-400 hover:text-gray-600 transition-colors"
             >
-              Cancel
+              {t('cancel')}
             </button>
           </div>
         </div>
@@ -773,7 +904,7 @@ export default function ProductsPage() {
                     onClick={() => { setShowScanner(false); setUploadPreview(null); }}
                     className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium transition-colors"
                   >
-                    Cancel
+                    {t('cancel')}
                   </button>
                 </>
               )}
@@ -787,7 +918,7 @@ export default function ProductsPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">
-              {editingProduct ? 'Edit Product' : 'Add New Product'}
+              {editingProduct ? t('edit') : t('addNewProduct')}
             </h2>
             {form.barcode && !editingProduct && (
               <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-[1.2rem] text-sm text-amber-800 flex items-center gap-2">
@@ -797,20 +928,21 @@ export default function ProductsPage() {
                   <line x1="9" y1="8" x2="9" y2="16" />
                   <line x1="12" y1="8" x2="12" y2="16" />
                 </svg>
-                Barcode pre-filled: <span className="font-mono font-semibold">{form.barcode}</span>
+                {t('barcodePrefilled')}: <span className="font-mono font-semibold">{form.barcode}</span>
               </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-3">
               {/* Row 1: Name + Upload Picture */}
               <div className="flex justify-between items-start">
                 <div className="flex-1 max-w-[65%]">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('nameRequired')}</label>
                   <input
                     type="text"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    readOnly={form.category === 'Singing Bowl'}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
+                    className={`w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none ${form.category === 'Singing Bowl' ? 'bg-gray-100 text-gray-500' : ''}`}
                     autoFocus
                   />
                 </div>
@@ -849,14 +981,14 @@ export default function ProductsPage() {
               {/* Row 2: Category + Barcode */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="relative">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('category')}</label>
                   <button
                     type="button"
                     onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none bg-white text-left flex items-center justify-between"
                   >
                     <span className={form.category ? 'text-gray-900' : 'text-gray-400'}>
-                      {form.category || 'Select category'}
+                      {td(form.category) || t('selectCategory')}
                     </span>
                     <svg className={`w-4 h-4 text-gray-500 transition-transform ${showCategoryDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -868,7 +1000,7 @@ export default function ProductsPage() {
                         <li
                           key={option}
                           onClick={() => {
-                            setForm({ ...form, category: option });
+                            setForm({ ...form, category: option, ...(option === 'Singing Bowl' ? { name: form.barcode } : {}) });
                             setShowCategoryDropdown(false);
                           }}
                           className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors ${form.category === option ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
@@ -880,11 +1012,14 @@ export default function ProductsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('barcode')}</label>
                   <input
                     type="text"
                     value={form.barcode}
-                    onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setForm((prev) => ({ ...prev, barcode: val, ...(prev.category === 'Singing Bowl' ? { name: val } : {}) }));
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none font-mono"
                   />
                 </div>
@@ -892,7 +1027,7 @@ export default function ProductsPage() {
 
               {/* Row 3: Description */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('description')}</label>
                 <textarea
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -902,9 +1037,10 @@ export default function ProductsPage() {
               </div>
 
               {/* Row 4: Weight, Size */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className={`grid ${form.category === 'Thanka' || form.category === 'Thanka Locket' ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
+                {form.category !== 'Thanka' && form.category !== 'Thanka Locket' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Weight</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('weight')}</label>
                   <input
                     type="text"
                     value={form.weight}
@@ -912,8 +1048,9 @@ export default function ProductsPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                   />
                 </div>
+                )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Size</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('size')}</label>
                   <input
                     type="text"
                     value={form.size}
@@ -926,7 +1063,7 @@ export default function ProductsPage() {
               {/* Row 5: Cost Price, Wholesale Price, Retail Price */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost Price</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('costPrice')}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -936,7 +1073,7 @@ export default function ProductsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Wholesale</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('wholesale')}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -946,7 +1083,7 @@ export default function ProductsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Retail Price</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('retailPrice')}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -961,14 +1098,14 @@ export default function ProductsPage() {
                   type="submit"
                   className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
                 >
-                  {editingProduct ? 'Update' : 'Create'}
+                  {editingProduct ? t('update') : t('create')}
                 </button>
                 <button
                   type="button"
                   onClick={resetForm}
                   className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
                 >
-                  Cancel
+                  {t('cancel')}
                 </button>
               </div>
             </form>
@@ -976,88 +1113,148 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Products Table */}
+      {/* Products Tables — grouped by category */}
       {loading ? (
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-700"></div>
         </div>
       ) : (
-        <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Image</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Barcode</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Weight</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Wholesale</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Retail</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {products.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    {p.image_url ? (
-                      <img
-                        src={getImageUrl(p.image_url)}
-                        alt={p.name}
-                        className="w-10 h-10 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => setPreviewImage(getImageUrl(p.image_url))}
-                      />
-                    ) : (
-                      <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
-                        N/A
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-800">{p.name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
-                  <td className="px-4 py-3 text-sm">{p.weight ? `${p.weight} kg` : '-'}</td>
-                  <td className="px-4 py-3 text-sm">{p.size || '-'}</td>
-                  <td className="px-4 py-3 text-sm">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-sm">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-sm">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-sm">
-                    <button
-                      onClick={() => handleEdit(p)}
-                      className="text-blue-600 hover:text-blue-800 mr-3"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setDeleteProduct(p)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {products.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
-                    No products found. Click "Add Product" to get started.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="space-y-6">
+          {(['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries']
+            .filter((cat) => !filterCategory || filterCategory === cat)
+            .map((cat) => {
+              const catProducts = products.filter((p) => p.category === cat);
+              if (catProducts.length === 0) return null;
+              return (
+                <div key={cat}>
+                  <h2 className="text-lg font-bold text-gray-800 mb-3">{td(cat)}</h2>
+                  <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('image')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('name')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('barcode')}</th>
+                          {cat !== 'Thanka' && cat !== 'Thanka Locket' && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('weight')}</th>}
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('size')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('cost')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('wholesale')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('retail')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('actions')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {catProducts.map((p) => (
+                          <tr key={p.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              {p.image_url ? (
+                                <img
+                                  src={getImageUrl(p.image_url)}
+                                  alt={p.name}
+                                  className="w-10 h-10 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                  onClick={() => setPreviewImage(getImageUrl(p.image_url))}
+                                />
+                              ) : (
+                                <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                                  N/A
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-800">{p.name}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
+                            {cat !== 'Thanka' && cat !== 'Thanka Locket' && <td className="px-4 py-3 text-sm">{p.weight || '-'}</td>}
+                            <td className="px-4 py-3 text-sm">{p.size || '-'}</td>
+                            <td className="px-4 py-3 text-sm">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3 text-sm">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3 text-sm">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3 text-sm">
+                              <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                              <button onClick={() => setDeleteProduct(p)} className="text-red-600 hover:text-red-800">Delete</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          {/* Uncategorized products */}
+          {(() => {
+            const uncategorized = products.filter((p) => !p.category || !['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].includes(p.category));
+            if (filterCategory || uncategorized.length === 0) return null;
+            return (
+              <div>
+                <h2 className="text-lg font-bold text-gray-800 mb-3">{t('other')}</h2>
+                <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('image')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('name')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('barcode')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('weight')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('size')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('cost')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('wholesale')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('retail')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('actions')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {uncategorized.map((p) => (
+                        <tr key={p.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            {p.image_url ? (
+                              <img
+                                src={getImageUrl(p.image_url)}
+                                alt={p.name}
+                                className="w-10 h-10 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() => setPreviewImage(getImageUrl(p.image_url))}
+                              />
+                            ) : (
+                              <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                                N/A
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-800">{p.name}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
+                          <td className="px-4 py-3 text-sm">{p.weight || '-'}</td>
+                          <td className="px-4 py-3 text-sm">{p.size || '-'}</td>
+                          <td className="px-4 py-3 text-sm">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-sm">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-sm">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-sm">
+                            <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                            <button onClick={() => setDeleteProduct(p)} className="text-red-600 hover:text-red-800">Delete</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+          {products.length === 0 && (
+            <div className="bg-white rounded-[1.2rem] shadow p-8 text-center text-gray-500">
+              {t('noProductsFound')}
+            </div>
+          )}
         </div>
       )}
       {/* Duplicate Product Popup */}
       {duplicateProduct && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-[1.2rem] shadow-xl p-6 w-full max-w-sm">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Product Already Exists</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">{t('productAlreadyExists')}</h3>
             <p className="text-gray-600 mb-4">
               Do you want to add <span className="font-semibold">{duplicateProduct.name}</span> again?
             </p>
             <div className="mb-5">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('quantity')}</label>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -1087,13 +1284,13 @@ export default function ProductsPage() {
                 onClick={handleDuplicateStockIn}
                 className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
               >
-                Add Stock
+                {t('addStock')}
               </button>
               <button
                 onClick={() => setDuplicateProduct(null)}
                 className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
               >
-                Cancel
+                {t('cancel')}
               </button>
             </div>
           </div>
@@ -1104,7 +1301,7 @@ export default function ProductsPage() {
       {deleteProduct && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-[1.2rem] shadow-xl p-6 w-full max-w-sm text-center">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Delete Product</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">{t('deleteProduct')}</h3>
             <p className="text-gray-600 mb-5">
               Are you sure you want to delete <span className="font-semibold">{deleteProduct.name}</span>?
             </p>
@@ -1119,9 +1316,108 @@ export default function ProductsPage() {
                 onClick={() => setDeleteProduct(null)}
                 className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
               >
-                Cancel
+                {t('cancel')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Download Quotation Popup */}
+      {showQuotation && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowQuotation(false)}
+        >
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-gray-800 mb-2">{t('downloadQuotation')}</h2>
+            <p className="text-gray-500 text-sm mb-5">{t('whichQuotation')}</p>
+
+            {/* Category Dropdown */}
+            <div className="mb-4 relative" ref={quotationCatRef}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('category')}</label>
+              <button
+                type="button"
+                onClick={() => { setQuotationCatOpen(!quotationCatOpen); setQuotationPriceOpen(false); }}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-[1.2rem] bg-white text-left flex items-center justify-between focus:outline-none"
+              >
+                <span className={quotationCategory ? 'text-gray-900' : 'text-gray-400'}>
+                  {td(quotationCategory) || t('allCategories')}
+                </span>
+                <svg className={`w-4 h-4 text-gray-500 transition-transform ${quotationCatOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {quotationCatOpen && (
+                <ul className="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-[1.2rem] shadow-lg overflow-hidden">
+                  <li
+                    onClick={() => { setQuotationCategory(''); setQuotationCatOpen(false); }}
+                    className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${!quotationCategory ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    {t('allCategories')}
+                  </li>
+                  {['Singing Bowl', 'Thanka', 'Jewelleries'].map((cat) => (
+                    <li
+                      key={cat}
+                      onClick={() => { setQuotationCategory(cat); setQuotationCatOpen(false); }}
+                      className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${quotationCategory === cat ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                    >
+                      {td(cat)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Price List Dropdown */}
+            <div className="mb-5 relative" ref={quotationPriceRef}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('priceList')}</label>
+              <button
+                type="button"
+                onClick={() => { setQuotationPriceOpen(!quotationPriceOpen); setQuotationCatOpen(false); }}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-[1.2rem] bg-white text-left flex items-center justify-between focus:outline-none"
+              >
+                <span className="text-gray-900">
+                  {{ cost_price: t('costPriceList'), retail_price: t('retailPriceList'), wholesale_price: t('wholesalePriceList') }[quotationPriceType]}
+                </span>
+                <svg className={`w-4 h-4 text-gray-500 transition-transform ${quotationPriceOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {quotationPriceOpen && (
+                <ul className="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-[1.2rem] shadow-lg overflow-hidden">
+                  {[
+                    { key: 'cost_price', label: t('costPriceList') },
+                    { key: 'retail_price', label: t('retailPriceList') },
+                    { key: 'wholesale_price', label: t('wholesalePriceList') },
+                  ].map((opt) => (
+                    <li
+                      key={opt.key}
+                      onClick={() => { setQuotationPriceType(opt.key); setQuotationPriceOpen(false); }}
+                      className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${quotationPriceType === opt.key ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                    >
+                      {opt.label}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <button
+              onClick={handleDownloadQuotation}
+              className="w-full py-2.5 bg-green-700 text-white rounded-[1.2rem] hover:bg-green-800 font-medium transition-colors flex items-center justify-center gap-2 mb-3"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {t('downloadExcel')}
+            </button>
+            <button
+              onClick={() => setShowQuotation(false)}
+              className="w-full py-2.5 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium transition-colors"
+            >
+              {t('cancel')}
+            </button>
           </div>
         </div>
       )}

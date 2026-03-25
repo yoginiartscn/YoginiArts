@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useApi } from '../hooks/useApi';
 import { productsApi, inventoryApi, getImageUrl } from '../utils/inventoryApi';
+import { useLanguage } from '../context/LanguageContext';
 import BarcodeScanner from '../components/BarcodeScanner';
 
 export default function ScanPage() {
   const api = useApi();
+  const { t } = useLanguage();
   const [product, setProduct] = useState(null);
   const [inventory, setInventory] = useState([]);
   const [error, setError] = useState('');
@@ -51,25 +53,25 @@ export default function ScanPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Barcode Scanner</h1>
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">{t('barcodeScanner')}</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Scanner */}
         <div className="bg-white rounded-[1.2rem] shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Camera Scanner</h2>
+          <h2 className="text-lg font-semibold mb-4">{t('cameraScanner')}</h2>
           <BarcodeScanner
             onScan={handleScan}
             onError={(msg) => setError(msg)}
           />
 
           <div className="mt-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Or enter barcode manually</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('enterBarcodeManually')}</label>
             <input
               type="text"
               value={manualBarcode}
               onChange={(e) => setManualBarcode(e.target.value)}
               onKeyDown={handleManualSearch}
-              placeholder="Type barcode and press Enter"
+              placeholder={t('typeBarcodeEnter')}
               className="w-full px-4 py-3 border border-gray-300 rounded-[1.2rem] focus:outline-none"
             />
           </div>
@@ -77,7 +79,7 @@ export default function ScanPage() {
 
         {/* Results */}
         <div className="bg-white rounded-[1.2rem] shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Product Info</h2>
+          <h2 className="text-lg font-semibold mb-4">{t('productInfo')}</h2>
 
           {error && (
             <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-[1.2rem] mb-4">
@@ -97,22 +99,22 @@ export default function ScanPage() {
                 )}
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className="p-2 bg-gray-50 rounded">
-                    <span className="text-gray-500">Barcode:</span>
+                    <span className="text-gray-500">{t('barcode')}:</span>
                     <br />
                     <strong>{product.barcode}</strong>
                   </div>
                   <div className="p-2 bg-gray-50 rounded">
-                    <span className="text-gray-500">Cost:</span>
+                    <span className="text-gray-500">{t('cost')}:</span>
                     <br />
                     <strong>{parseFloat(product.cost_price || 0).toFixed(2)}</strong>
                   </div>
                   <div className="p-2 bg-gray-50 rounded">
-                    <span className="text-gray-500">Retail:</span>
+                    <span className="text-gray-500">{t('retail')}:</span>
                     <br />
                     <strong>{parseFloat(product.retail_price || 0).toFixed(2)}</strong>
                   </div>
                   <div className="p-2 bg-gray-50 rounded">
-                    <span className="text-gray-500">Wholesale:</span>
+                    <span className="text-gray-500">{t('wholesale')}:</span>
                     <br />
                     <strong>{parseFloat(product.wholesale_price || 0).toFixed(2)}</strong>
                   </div>
@@ -120,7 +122,7 @@ export default function ScanPage() {
               </div>
 
               {/* Stock Levels */}
-              <h4 className="font-semibold mb-2">Stock Levels</h4>
+              <h4 className="font-semibold mb-2">{t('stockLevels')}</h4>
               {inventory.length > 0 ? (
                 <div className="space-y-2">
                   {inventory.map((inv) => (
@@ -131,13 +133,13 @@ export default function ScanPage() {
                         inv.quantity <= 5 ? 'text-yellow-600' :
                         'text-green-600'
                       }`}>
-                        {inv.quantity} units
+                        {inv.quantity} {t('units')}
                       </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500">No stock records for this product</p>
+                <p className="text-gray-500">{t('noStockRecords')}</p>
               )}
             </div>
           ) : !error ? (
@@ -145,7 +147,7 @@ export default function ScanPage() {
               <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
               </svg>
-              <p>Scan a barcode or enter one manually to see product details</p>
+              <p>{t('scanBarcodeToSee')}</p>
             </div>
           ) : null}
         </div>

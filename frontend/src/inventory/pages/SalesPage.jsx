@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
 import { productsApi, locationsApi, inventoryApi } from '../utils/inventoryApi';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function SalesPage() {
   const api = useApi();
+  const { t, td } = useLanguage();
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
   const [barcodeInput, setBarcodeInput] = useState('');
@@ -18,7 +20,6 @@ export default function SalesPage() {
         setProducts(prodRes.data.data);
         const locs = locRes.data.data;
         setLocations(locs);
-        // Default to Guangzhou Warehouse
         const defaultLoc = locs.find((l) => l.name === 'Guangzhou Warehouse');
         if (defaultLoc) setForm((prev) => ({ ...prev, location_id: defaultLoc.id }));
       });
@@ -34,7 +35,7 @@ export default function SalesPage() {
         setSelectedProduct(product);
         setMessage(null);
       } else {
-        setMessage({ type: 'error', text: `No product found with barcode: ${barcodeInput}` });
+        setMessage({ type: 'error', text: `${t('productNotFound')}: ${barcodeInput}` });
         setSelectedProduct(null);
       }
       setBarcodeInput('');
@@ -60,7 +61,7 @@ export default function SalesPage() {
       });
 
       const total = res.data.total;
-      setMessage({ type: 'success', text: `Sale completed! Total: ${parseFloat(total).toFixed(2)}` });
+      setMessage({ type: 'success', text: `${t('completeSale')}! ${t('total')}: ${parseFloat(total).toFixed(2)}` });
       setSelectedProduct(null);
       setForm({ ...form, quantity: 1 });
       barcodeRef.current?.focus();
@@ -77,7 +78,7 @@ export default function SalesPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Point of Sale</h1>
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">{t('pointOfSale')}</h1>
 
       {message && (
         <div className={`mb-4 p-4 rounded-[1.2rem] ${
@@ -91,24 +92,24 @@ export default function SalesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Product Selection */}
         <div className="bg-white rounded-[1.2rem] shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Select Product</h2>
+          <h2 className="text-lg font-semibold mb-4">{t('selectProduct')}</h2>
 
           {/* Barcode Input */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Scan / Enter Barcode</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('scanEnterBarcode')}</label>
             <input
               ref={barcodeRef}
               type="text"
               value={barcodeInput}
               onChange={(e) => setBarcodeInput(e.target.value)}
               onKeyDown={handleBarcodeScan}
-              placeholder="Scan barcode or type and press Enter"
+              placeholder={t('scanOrType')}
               className="w-full px-4 py-3 border-2 border-amber-300 rounded-[1.2rem] focus:outline-none text-lg"
               autoFocus
             />
           </div>
 
-          <div className="text-center text-gray-400 my-2">or</div>
+          <div className="text-center text-gray-400 my-2">{t('or')}</div>
 
           {/* Product Dropdown */}
           <select
@@ -116,7 +117,7 @@ export default function SalesPage() {
             value={selectedProduct?.id || ''}
             className="w-full px-4 py-3 border border-gray-300 rounded-[1.2rem] focus:outline-none"
           >
-            <option value="">Choose a product...</option>
+            <option value="">{t('chooseProduct')}</option>
             {products.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} {p.barcode ? `(${p.barcode})` : ''}
@@ -129,11 +130,11 @@ export default function SalesPage() {
             <div className="mt-4 p-4 bg-amber-50 rounded-[1.2rem] border border-amber-200">
               <h3 className="font-bold text-lg">{selectedProduct.name}</h3>
               {selectedProduct.barcode && (
-                <p className="text-sm text-gray-600">Barcode: {selectedProduct.barcode}</p>
+                <p className="text-sm text-gray-600">{t('barcode')}: {selectedProduct.barcode}</p>
               )}
               <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                <span>Retail: <strong>{parseFloat(selectedProduct.retail_price || 0).toFixed(2)}</strong></span>
-                <span>Wholesale: <strong>{parseFloat(selectedProduct.wholesale_price || 0).toFixed(2)}</strong></span>
+                <span>{t('retail')}: <strong>{parseFloat(selectedProduct.retail_price || 0).toFixed(2)}</strong></span>
+                <span>{t('wholesale')}: <strong>{parseFloat(selectedProduct.wholesale_price || 0).toFixed(2)}</strong></span>
               </div>
             </div>
           )}
@@ -141,29 +142,29 @@ export default function SalesPage() {
 
         {/* Right: Sale Form */}
         <div className="bg-white rounded-[1.2rem] shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Complete Sale</h2>
+          <h2 className="text-lg font-semibold mb-4">{t('completeSale')}</h2>
 
           <form onSubmit={handleSale} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('location')}</label>
               <select
                 value={form.location_id}
                 onChange={(e) => setForm({ ...form, location_id: e.target.value })}
                 required
                 className="w-full px-4 py-3 border border-gray-300 rounded-[1.2rem] focus:outline-none"
               >
-                <option value="">Select location</option>
+                <option value="">{t('selectLocation')}</option>
                 {locations.filter((l) => l.name === 'Guangzhou Warehouse').map((l) => (
                   <option key={l.id} value={l.id}>Guangzhou Warehouse</option>
                 ))}
                 {locations.filter((l) => l.name !== 'Guangzhou Warehouse').map((l) => (
-                  <option key={l.id} value={l.id}>{l.name} ({l.type})</option>
+                  <option key={l.id} value={l.id}>{l.name} ({td(l.type)})</option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Price Type</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('priceType')}</label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -174,7 +175,7 @@ export default function SalesPage() {
                     onChange={(e) => setForm({ ...form, price_type: e.target.value })}
                     className="text-amber-700 focus:outline-none"
                   />
-                  <span className="text-sm font-medium">Retail</span>
+                  <span className="text-sm font-medium">{t('retail')}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -185,13 +186,13 @@ export default function SalesPage() {
                     onChange={(e) => setForm({ ...form, price_type: e.target.value })}
                     className="text-amber-700 focus:outline-none"
                   />
-                  <span className="text-sm font-medium">Wholesale</span>
+                  <span className="text-sm font-medium">{t('wholesale')}</span>
                 </label>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('quantity')}</label>
               <input
                 type="number"
                 min="1"
@@ -205,7 +206,7 @@ export default function SalesPage() {
             {/* Total */}
             <div className="p-4 bg-gray-50 rounded-[1.2rem]">
               <div className="flex justify-between items-center text-xl font-bold">
-                <span>Total:</span>
+                <span>{t('total')}:</span>
                 <span className="text-amber-700">
                   {(currentPrice * parseInt(form.quantity || 0)).toFixed(2)}
                 </span>
@@ -217,7 +218,7 @@ export default function SalesPage() {
               disabled={!selectedProduct}
               className="w-full py-4 bg-green-600 text-white rounded-[1.2rem] hover:bg-green-700 font-bold text-xl disabled:opacity-50 transition-colors"
             >
-              Complete Sale
+              {t('completeSale')}
             </button>
           </form>
         </div>

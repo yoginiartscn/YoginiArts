@@ -69,4 +69,18 @@ export const reportsApi = {
       responseType: 'blob',
     });
   },
+  exportQuotation: (api, category = '', priceType = 'retail_price') => {
+    const params = new URLSearchParams();
+    if (category) params.append('category', category);
+    if (priceType) params.append('price_type', priceType);
+    const query = params.toString();
+    return api.get(`/reports/export/quotation${query ? `?${query}` : ''}`, {
+      responseType: 'blob',
+    });
+  },
+  exportTransfers: (api, locationId = '') => {
+    return api.get(`/reports/export/transfers${locationId ? `?location_id=${locationId}` : ''}`, {
+      responseType: 'blob',
+    });
+  },
 };

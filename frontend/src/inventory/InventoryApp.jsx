@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { LanguageProvider } from './context/LanguageContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import InventoryLayout from './components/InventoryLayout';
 import Login from './pages/Login';
@@ -15,6 +16,7 @@ import ScanPage from './pages/ScanPage';
 
 export default function InventoryApp() {
   return (
+    <LanguageProvider>
     <AuthProvider>
       <Routes>
         <Route path="login" element={<Login />} />
@@ -41,5 +43,6 @@ export default function InventoryApp() {
         />
       </Routes>
     </AuthProvider>
+    </LanguageProvider>
   );
 }

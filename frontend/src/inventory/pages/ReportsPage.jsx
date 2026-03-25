@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import { reportsApi, locationsApi } from '../utils/inventoryApi';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function ReportsPage() {
   const api = useApi();
+  const { t, td } = useLanguage();
   const [transactions, setTransactions] = useState([]);
   const [locations, setLocations] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
@@ -57,14 +59,14 @@ export default function ReportsPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Reports</h1>
+        <h1 className="text-2xl font-bold text-gray-800">{t('reports')}</h1>
         <div className="flex gap-2 items-center">
           <select
             value={exportLocation}
             onChange={(e) => setExportLocation(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-[1.2rem] text-sm"
           >
-            <option value="">All Products</option>
+            <option value="">{t('allProducts')}</option>
             {locations.map((l) => (
               <option key={l.id} value={l.id}>{l.name}</option>
             ))}
@@ -73,7 +75,7 @@ export default function ReportsPage() {
             onClick={handleExport}
             className="px-4 py-2 bg-green-600 text-white rounded-[1.2rem] hover:bg-green-700 font-medium text-sm"
           >
-            Export Excel
+            {t('exportExcel')}
           </button>
         </div>
       </div>
@@ -81,20 +83,20 @@ export default function ReportsPage() {
       {/* Filters */}
       <form onSubmit={handleFilter} className="bg-white rounded-[1.2rem] shadow p-4 mb-6 flex flex-wrap gap-3 items-end">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">{t('type')}</label>
           <select
             value={filters.type}
             onChange={(e) => setFilters({ ...filters, type: e.target.value })}
             className="px-3 py-2 border border-gray-300 rounded-[1.2rem] text-sm"
           >
-            <option value="">All</option>
-            <option value="stock_in">Stock In</option>
-            <option value="transfer">Transfer</option>
-            <option value="sale">Sale</option>
+            <option value="">{t('all')}</option>
+            <option value="stock_in">{t('stockInLabel')}</option>
+            <option value="transfer">{t('transfer')}</option>
+            <option value="sale">{t('sale')}</option>
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">From Date</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">{t('fromDate')}</label>
           <input
             type="date"
             value={filters.start_date}
@@ -103,7 +105,7 @@ export default function ReportsPage() {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">To Date</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">{t('toDate')}</label>
           <input
             type="date"
             value={filters.end_date}
@@ -112,7 +114,7 @@ export default function ReportsPage() {
           />
         </div>
         <button type="submit" className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 text-sm font-medium">
-          Filter
+          {t('filter')}
         </button>
       </form>
 
@@ -127,14 +129,14 @@ export default function ReportsPage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">From</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">To</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">By</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('type')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('product')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('from')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('to')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('qty')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('priceType')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('by')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('date')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -146,14 +148,14 @@ export default function ReportsPage() {
                         tx.type === 'transfer' ? 'bg-blue-100 text-blue-800' :
                         'bg-amber-100 text-amber-800'
                       }`}>
-                        {tx.type.replace('_', ' ')}
+                        {tx.type === 'stock_in' ? t('stockInLabel') : tx.type === 'transfer' ? t('transfer') : t('sale')}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm">{tx.product?.name || '-'}</td>
                     <td className="px-4 py-3 text-sm">{tx.fromLocation?.name || '-'}</td>
                     <td className="px-4 py-3 text-sm">{tx.toLocation?.name || '-'}</td>
                     <td className="px-4 py-3 text-sm font-medium">{tx.quantity}</td>
-                    <td className="px-4 py-3 text-sm">{tx.price_type || '-'}</td>
+                    <td className="px-4 py-3 text-sm">{td(tx.price_type) || '-'}</td>
                     <td className="px-4 py-3 text-sm">{tx.createdByUser?.name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {new Date(tx.createdAt).toLocaleString()}
@@ -162,7 +164,7 @@ export default function ReportsPage() {
                 ))}
                 {transactions.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">No transactions found</td>
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">{t('noTransactionsFound')}</td>
                   </tr>
                 )}
               </tbody>

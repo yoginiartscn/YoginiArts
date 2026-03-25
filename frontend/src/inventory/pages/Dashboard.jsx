@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import { reportsApi } from '../utils/inventoryApi';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function Dashboard() {
   const api = useApi();
+  const { t, td } = useLanguage();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -23,15 +25,15 @@ export default function Dashboard() {
   }
 
   const cards = [
-    { label: 'Total Products', value: summary?.totalProducts || 0, color: 'bg-blue-500' },
-    { label: 'Total Locations', value: summary?.totalLocations || 0, color: 'bg-green-500' },
-    { label: "Today's Sales", value: summary?.todaySales || 0, color: 'bg-amber-500' },
-    { label: 'Low Stock', value: summary?.lowStock || 0, color: 'bg-red-500' },
+    { label: t('totalProducts'), value: summary?.totalProducts || 0, color: 'bg-blue-500' },
+    { label: t('totalLocations'), value: summary?.totalLocations || 0, color: 'bg-green-500' },
+    { label: t('todaySales'), value: summary?.todaySales || 0, color: 'bg-amber-500' },
+    { label: t('lowStock'), value: summary?.lowStock || 0, color: 'bg-red-500' },
   ];
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Dashboard</h1>
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">{t('dashboard')}</h1>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -52,17 +54,17 @@ export default function Dashboard() {
 
       {/* Recent Transactions */}
       <div className="bg-white rounded-[1.2rem] shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Recent Transactions</h2>
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('recentTransactionsTitle')}</h2>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead>
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">From</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">To</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('type')}</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('product')}</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('from')}</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('to')}</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('qty')}</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('date')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -74,7 +76,7 @@ export default function Dashboard() {
                       tx.type === 'transfer' ? 'bg-blue-100 text-blue-800' :
                       'bg-amber-100 text-amber-800'
                     }`}>
-                      {tx.type.replace('_', ' ')}
+                      {tx.type === 'stock_in' ? t('stockInLabel') : tx.type === 'transfer' ? t('transfer') : t('sale')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm">{tx.product?.name || '-'}</td>
@@ -82,15 +84,10 @@ export default function Dashboard() {
                   <td className="px-4 py-3 text-sm">{tx.toLocation?.name || '-'}</td>
                   <td className="px-4 py-3 text-sm font-medium">{tx.quantity}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">
-                    {new Date(tx.createdAt).toLocaleDateString()}
+                    {new Date(tx.createdAt).toLocaleString()}
                   </td>
                 </tr>
               ))}
-              {(!summary?.recentTransactions || summary.recentTransactions.length === 0) && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">No transactions yet</td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>

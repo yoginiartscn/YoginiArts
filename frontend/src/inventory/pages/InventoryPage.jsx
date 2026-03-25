@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import { inventoryApi, locationsApi, productsApi, getImageUrl } from '../utils/inventoryApi';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function InventoryPage() {
   const api = useApi();
+  const { t, td } = useLanguage();
   const [inventory, setInventory] = useState([]);
   const [locations, setLocations] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState('');
@@ -96,12 +98,12 @@ export default function InventoryPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Inventory</h1>
+        <h1 className="text-2xl font-bold text-gray-800">{t('inventory')}</h1>
         <button
           onClick={openStockIn}
           className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
         >
-          + Stock In
+          {t('stockIn')}
         </button>
       </div>
 
@@ -112,12 +114,12 @@ export default function InventoryPage() {
           onChange={(e) => setSelectedLocation(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
         >
-          <option value="">All Locations</option>
+          <option value="">{t('allLocations')}</option>
           {locations.filter((loc) => loc.name === 'Guangzhou Warehouse').map((loc) => (
             <option key={loc.id} value={loc.id}>Guangzhou Warehouse</option>
           ))}
           {locations.filter((loc) => loc.name !== 'Guangzhou Warehouse').map((loc) => (
-            <option key={loc.id} value={loc.id}>{loc.name} ({loc.type})</option>
+            <option key={loc.id} value={loc.id}>{loc.name} ({td(loc.type)})</option>
           ))}
         </select>
       </div>
@@ -126,36 +128,36 @@ export default function InventoryPage() {
       {showStockIn && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Stock In</h2>
+            <h2 className="text-xl font-bold mb-4">{t('stockInLabel')}</h2>
             <form onSubmit={handleStockIn} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('product')}</label>
                 <select
                   value={stockForm.product_id}
                   onChange={(e) => setStockForm({ ...stockForm, product_id: e.target.value })}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                 >
-                  <option value="">Select product</option>
+                  <option value="">{t('selectProduct')}</option>
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>{p.name} {p.barcode ? `(${p.barcode})` : ''}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('location')}</label>
                 <select
                   value={stockForm.location_id}
                   onChange={(e) => setStockForm({ ...stockForm, location_id: e.target.value })}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                 >
-                  <option value="">Select location</option>
+                  <option value="">{t('selectLocation')}</option>
                   {locations.filter((l) => l.name === 'Guangzhou Warehouse').map((l) => (
                     <option key={l.id} value={l.id}>Guangzhou Warehouse</option>
                   ))}
                   {locations.filter((l) => l.name !== 'Guangzhou Warehouse').map((l) => (
-                    <option key={l.id} value={l.id}>{l.name} ({l.type})</option>
+                    <option key={l.id} value={l.id}>{l.name} ({td(l.type)})</option>
                   ))}
                 </select>
               </div>
@@ -172,10 +174,10 @@ export default function InventoryPage() {
               </div>
               <div className="flex gap-3">
                 <button type="submit" className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium">
-                  Add Stock
+                  {t('addStock')}
                 </button>
                 <button type="button" onClick={() => setShowStockIn(false)} className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium">
-                  Cancel
+                  {t('cancel')}
                 </button>
               </div>
             </form>
@@ -193,13 +195,13 @@ export default function InventoryPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Image</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Barcode</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('image')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('product')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('barcode')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('location')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('quantity')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('status')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -224,7 +226,7 @@ export default function InventoryPage() {
                       inv.quantity <= 5 ? 'bg-yellow-100 text-yellow-800' :
                       'bg-green-100 text-green-800'
                     }`}>
-                      {inv.quantity === 0 ? 'Out of Stock' : inv.quantity <= 5 ? 'Low Stock' : 'In Stock'}
+                      {inv.quantity === 0 ? t('outOfStockLabel') : inv.quantity <= 5 ? t('lowStockLabel') : t('inStock')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm">
@@ -232,7 +234,7 @@ export default function InventoryPage() {
                       onClick={() => { setEditingInv(inv); setEditQty(inv.quantity); }}
                       className="text-blue-600 hover:text-blue-800 font-medium"
                     >
-                      Manage
+                      {t('manage')}
                     </button>
                   </td>
                 </tr>
@@ -240,7 +242,7 @@ export default function InventoryPage() {
               {inventory.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                    No inventory records. Use "Stock In" to add stock.
+                    {t('noInventoryRecords')}
                   </td>
                 </tr>
               )}
@@ -252,7 +254,7 @@ export default function InventoryPage() {
       {editingInv && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-[1.2rem] shadow-xl p-6 w-full max-w-sm">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Manage Quantity</h3>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">{t('manageQuantity')}</h3>
             <p className="text-gray-600 mb-4">
               <span className="font-semibold">{editingInv.product?.name}</span> at {editingInv.location?.name}
             </p>
@@ -287,13 +289,13 @@ export default function InventoryPage() {
                 onClick={handleUpdateQty}
                 className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
               >
-                Update
+                {t('update')}
               </button>
               <button
                 onClick={() => setEditingInv(null)}
                 className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
               >
-                Cancel
+                {t('cancel')}
               </button>
             </div>
           </div>
