@@ -11,6 +11,8 @@ export default function InventoryPage() {
   const [showStockIn, setShowStockIn] = useState(false);
   const [products, setProducts] = useState([]);
   const [stockForm, setStockForm] = useState({ product_id: '', location_id: '', quantity: '' });
+  const [editingInv, setEditingInv] = useState(null);
+  const [editQty, setEditQty] = useState(1);
 
   const fetchData = async () => {
     try {
@@ -18,14 +20,18 @@ export default function InventoryPage() {
         inventoryApi.getAll(api, selectedLocation),
         locationsApi.getAll(api),
       ]);
-      setInventory(invRes.data.data);
       const locs = locRes.data.data;
       setLocations(locs);
-      // Set default location for stock-in form
+      // Set default location to Guangzhou Warehouse
       if (locs.length > 0 && !stockForm.location_id) {
         const defaultLoc = locs.find((l) => l.name === 'Guangzhou Warehouse') || locs[0];
         setStockForm((prev) => ({ ...prev, location_id: defaultLoc.id }));
+        if (!selectedLocation) {
+          setSelectedLocation(defaultLoc.id);
+          return; // will re-fetch with the selected location
+        }
       }
+      setInventory(invRes.data.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -52,6 +58,33 @@ export default function InventoryPage() {
     }
   };
 
+  const handleUpdateQty = async () => {
+    if (!editingInv) return;
+    try {
+      const diff = editQty - editingInv.quantity;
+      if (diff > 0) {
+        await inventoryApi.stockIn(api, {
+          product_id: editingInv.product_id,
+          location_id: editingInv.location_id,
+          quantity: diff,
+          notes: 'Manual quantity adjustment',
+        });
+      } else if (diff < 0) {
+        await inventoryApi.sale(api, {
+          product_id: editingInv.product_id,
+          location_id: editingInv.location_id,
+          quantity: Math.abs(diff),
+          price_type: 'retail',
+          notes: 'Manual quantity adjustment',
+        });
+      }
+      setEditingInv(null);
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update quantity');
+    }
+  };
+
   const openStockIn = async () => {
     if (products.length === 0) {
       const res = await productsApi.getAll(api);
@@ -66,7 +99,7 @@ export default function InventoryPage() {
         <h1 className="text-2xl font-bold text-gray-800">Inventory</h1>
         <button
           onClick={openStockIn}
-          className="px-4 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium"
+          className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
         >
           + Stock In
         </button>
@@ -77,11 +110,11 @@ export default function InventoryPage() {
         <select
           value={selectedLocation}
           onChange={(e) => setSelectedLocation(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+          className="px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
         >
           <option value="">All Locations</option>
           {locations.filter((loc) => loc.name === 'Guangzhou Warehouse').map((loc) => (
-            <option key={loc.id} value={loc.id}>Guangzhou Warehouse (Default)</option>
+            <option key={loc.id} value={loc.id}>Guangzhou Warehouse</option>
           ))}
           {locations.filter((loc) => loc.name !== 'Guangzhou Warehouse').map((loc) => (
             <option key={loc.id} value={loc.id}>{loc.name} ({loc.type})</option>
@@ -101,7 +134,7 @@ export default function InventoryPage() {
                   value={stockForm.product_id}
                   onChange={(e) => setStockForm({ ...stockForm, product_id: e.target.value })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                 >
                   <option value="">Select product</option>
                   {products.map((p) => (
@@ -115,11 +148,11 @@ export default function InventoryPage() {
                   value={stockForm.location_id}
                   onChange={(e) => setStockForm({ ...stockForm, location_id: e.target.value })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                 >
                   <option value="">Select location</option>
                   {locations.filter((l) => l.name === 'Guangzhou Warehouse').map((l) => (
-                    <option key={l.id} value={l.id}>Guangzhou Warehouse (Default)</option>
+                    <option key={l.id} value={l.id}>Guangzhou Warehouse</option>
                   ))}
                   {locations.filter((l) => l.name !== 'Guangzhou Warehouse').map((l) => (
                     <option key={l.id} value={l.id}>{l.name} ({l.type})</option>
@@ -134,14 +167,14 @@ export default function InventoryPage() {
                   value={stockForm.quantity}
                   onChange={(e) => setStockForm({ ...stockForm, quantity: e.target.value })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                 />
               </div>
               <div className="flex gap-3">
-                <button type="submit" className="flex-1 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium">
+                <button type="submit" className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium">
                   Add Stock
                 </button>
-                <button type="button" onClick={() => setShowStockIn(false)} className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium">
+                <button type="button" onClick={() => setShowStockIn(false)} className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium">
                   Cancel
                 </button>
               </div>
@@ -156,7 +189,7 @@ export default function InventoryPage() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-700"></div>
         </div>
       ) : (
-        <div className="overflow-x-auto bg-white rounded-lg shadow">
+        <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -166,6 +199,7 @@ export default function InventoryPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -193,17 +227,76 @@ export default function InventoryPage() {
                       {inv.quantity === 0 ? 'Out of Stock' : inv.quantity <= 5 ? 'Low Stock' : 'In Stock'}
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-sm">
+                    <button
+                      onClick={() => { setEditingInv(inv); setEditQty(inv.quantity); }}
+                      className="text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Manage
+                    </button>
+                  </td>
                 </tr>
               ))}
               {inventory.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                     No inventory records. Use "Stock In" to add stock.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+      )}
+      {/* Manage Quantity Popup */}
+      {editingInv && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[1.2rem] shadow-xl p-6 w-full max-w-sm">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">Manage Quantity</h3>
+            <p className="text-gray-600 mb-4">
+              <span className="font-semibold">{editingInv.product?.name}</span> at {editingInv.location?.name}
+            </p>
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditQty(Math.max(0, editQty - 1))}
+                  className="w-10 h-10 flex items-center justify-center border border-gray-300 rounded-[1.2rem] text-lg font-bold text-gray-600 hover:bg-gray-100"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min="0"
+                  value={editQty}
+                  onChange={(e) => setEditQty(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-[1.2rem] text-center focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setEditQty(editQty + 1)}
+                  className="w-10 h-10 flex items-center justify-center border border-gray-300 rounded-[1.2rem] text-lg font-bold text-gray-600 hover:bg-gray-100"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={handleUpdateQty}
+                className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
+              >
+                Update
+              </button>
+              <button
+                onClick={() => setEditingInv(null)}
+                className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

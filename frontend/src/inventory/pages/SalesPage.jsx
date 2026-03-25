@@ -80,7 +80,7 @@ export default function SalesPage() {
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Point of Sale</h1>
 
       {message && (
-        <div className={`mb-4 p-4 rounded-lg ${
+        <div className={`mb-4 p-4 rounded-[1.2rem] ${
           message.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' :
           'bg-red-50 border border-red-200 text-red-700'
         }`}>
@@ -90,7 +90,7 @@ export default function SalesPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Product Selection */}
-        <div className="bg-white rounded-xl shadow p-6">
+        <div className="bg-white rounded-[1.2rem] shadow p-6">
           <h2 className="text-lg font-semibold mb-4">Select Product</h2>
 
           {/* Barcode Input */}
@@ -103,7 +103,7 @@ export default function SalesPage() {
               onChange={(e) => setBarcodeInput(e.target.value)}
               onKeyDown={handleBarcodeScan}
               placeholder="Scan barcode or type and press Enter"
-              className="w-full px-4 py-3 border-2 border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-lg"
+              className="w-full px-4 py-3 border-2 border-amber-300 rounded-[1.2rem] focus:outline-none text-lg"
               autoFocus
             />
           </div>
@@ -114,7 +114,7 @@ export default function SalesPage() {
           <select
             onChange={(e) => handleProductSelect(e.target.value)}
             value={selectedProduct?.id || ''}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+            className="w-full px-4 py-3 border border-gray-300 rounded-[1.2rem] focus:outline-none"
           >
             <option value="">Choose a product...</option>
             {products.map((p) => (
@@ -126,7 +126,7 @@ export default function SalesPage() {
 
           {/* Selected Product Card */}
           {selectedProduct && (
-            <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+            <div className="mt-4 p-4 bg-amber-50 rounded-[1.2rem] border border-amber-200">
               <h3 className="font-bold text-lg">{selectedProduct.name}</h3>
               {selectedProduct.barcode && (
                 <p className="text-sm text-gray-600">Barcode: {selectedProduct.barcode}</p>
@@ -140,7 +140,7 @@ export default function SalesPage() {
         </div>
 
         {/* Right: Sale Form */}
-        <div className="bg-white rounded-xl shadow p-6">
+        <div className="bg-white rounded-[1.2rem] shadow p-6">
           <h2 className="text-lg font-semibold mb-4">Complete Sale</h2>
 
           <form onSubmit={handleSale} className="space-y-4">
@@ -150,11 +150,11 @@ export default function SalesPage() {
                 value={form.location_id}
                 onChange={(e) => setForm({ ...form, location_id: e.target.value })}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-[1.2rem] focus:outline-none"
               >
                 <option value="">Select location</option>
                 {locations.filter((l) => l.name === 'Guangzhou Warehouse').map((l) => (
-                  <option key={l.id} value={l.id}>Guangzhou Warehouse (Default)</option>
+                  <option key={l.id} value={l.id}>Guangzhou Warehouse</option>
                 ))}
                 {locations.filter((l) => l.name !== 'Guangzhou Warehouse').map((l) => (
                   <option key={l.id} value={l.id}>{l.name} ({l.type})</option>
@@ -172,7 +172,7 @@ export default function SalesPage() {
                     value="retail"
                     checked={form.price_type === 'retail'}
                     onChange={(e) => setForm({ ...form, price_type: e.target.value })}
-                    className="text-amber-700 focus:ring-amber-500"
+                    className="text-amber-700 focus:outline-none"
                   />
                   <span className="text-sm font-medium">Retail</span>
                 </label>
@@ -183,7 +183,7 @@ export default function SalesPage() {
                     value="wholesale"
                     checked={form.price_type === 'wholesale'}
                     onChange={(e) => setForm({ ...form, price_type: e.target.value })}
-                    className="text-amber-700 focus:ring-amber-500"
+                    className="text-amber-700 focus:outline-none"
                   />
                   <span className="text-sm font-medium">Wholesale</span>
                 </label>
@@ -198,12 +198,12 @@ export default function SalesPage() {
                 value={form.quantity}
                 onChange={(e) => setForm({ ...form, quantity: e.target.value })}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent text-lg"
+                className="w-full px-4 py-3 border border-gray-300 rounded-[1.2rem] focus:outline-none text-lg"
               />
             </div>
 
             {/* Total */}
-            <div className="p-4 bg-gray-50 rounded-lg">
+            <div className="p-4 bg-gray-50 rounded-[1.2rem]">
               <div className="flex justify-between items-center text-xl font-bold">
                 <span>Total:</span>
                 <span className="text-amber-700">
@@ -215,7 +215,7 @@ export default function SalesPage() {
             <button
               type="submit"
               disabled={!selectedProduct}
-              className="w-full py-4 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold text-xl disabled:opacity-50 transition-colors"
+              className="w-full py-4 bg-green-600 text-white rounded-[1.2rem] hover:bg-green-700 font-bold text-xl disabled:opacity-50 transition-colors"
             >
               Complete Sale
             </button>

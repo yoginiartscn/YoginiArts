@@ -55,7 +55,7 @@ export default function ScanPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Scanner */}
-        <div className="bg-white rounded-xl shadow p-6">
+        <div className="bg-white rounded-[1.2rem] shadow p-6">
           <h2 className="text-lg font-semibold mb-4">Camera Scanner</h2>
           <BarcodeScanner
             onScan={handleScan}
@@ -70,17 +70,17 @@ export default function ScanPage() {
               onChange={(e) => setManualBarcode(e.target.value)}
               onKeyDown={handleManualSearch}
               placeholder="Type barcode and press Enter"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-[1.2rem] focus:outline-none"
             />
           </div>
         </div>
 
         {/* Results */}
-        <div className="bg-white rounded-xl shadow p-6">
+        <div className="bg-white rounded-[1.2rem] shadow p-6">
           <h2 className="text-lg font-semibold mb-4">Product Info</h2>
 
           {error && (
-            <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg mb-4">
+            <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-[1.2rem] mb-4">
               {error}
             </div>
           )}
@@ -89,7 +89,7 @@ export default function ScanPage() {
             <div>
               <div className="space-y-3 mb-6">
                 {product.image_url && (
-                  <img src={product.image_url} alt={product.name} className="w-32 h-32 object-cover rounded-lg" />
+                  <img src={product.image_url} alt={product.name} className="w-32 h-32 object-cover rounded-[1.2rem]" />
                 )}
                 <h3 className="text-xl font-bold">{product.name}</h3>
                 {product.description && (
@@ -124,7 +124,7 @@ export default function ScanPage() {
               {inventory.length > 0 ? (
                 <div className="space-y-2">
                   {inventory.map((inv) => (
-                    <div key={inv.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                    <div key={inv.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-[1.2rem]">
                       <span>{inv.location?.name || 'Unknown'}</span>
                       <span className={`font-bold ${
                         inv.quantity === 0 ? 'text-red-600' :

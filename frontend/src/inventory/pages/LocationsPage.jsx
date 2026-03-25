@@ -77,7 +77,7 @@ export default function LocationsPage() {
         <h1 className="text-2xl font-bold text-gray-800">Locations</h1>
         <button
           onClick={() => { resetForm(); setShowForm(true); }}
-          className="px-4 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium"
+          className="px-4 py-2 bg-amber-700 text-white rounded-[2.2rem] hover:bg-amber-800 font-medium"
         >
           + Add Location
         </button>
@@ -86,12 +86,12 @@ export default function LocationsPage() {
       {/* Location Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+          <div className="bg-white rounded-[2.2rem] shadow-xl p-6 w-full max-w-md">
             <h2 className="text-xl font-bold mb-4">
               {editingLocation ? 'Edit Location' : 'Add New Location'}
             </h2>
             {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-[2.2rem] text-sm">
                 {error}
               </div>
             )}
@@ -104,7 +104,7 @@ export default function LocationsPage() {
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   required
                   placeholder="e.g. Guangzhou Warehouse"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-[2.2rem] focus:outline-none"
                 />
               </div>
               <div>
@@ -115,7 +115,7 @@ export default function LocationsPage() {
                       key={key}
                       type="button"
                       onClick={() => setForm({ ...form, type: key })}
-                      className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all duration-200 ${
+                      className={`flex flex-col items-center gap-1 p-3 rounded-[2.2rem] border-2 transition-all duration-200 ${
                         form.type === key
                           ? 'border-amber-700 bg-amber-50'
                           : 'border-gray-200 hover:border-gray-300'
@@ -134,14 +134,14 @@ export default function LocationsPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
-                  className="flex-1 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium"
+                  className="flex-1 py-2 bg-amber-700 text-white rounded-[2.2rem] hover:bg-amber-800 font-medium"
                 >
                   {editingLocation ? 'Update' : 'Create'}
                 </button>
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+                  className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[2.2rem] hover:bg-gray-300 font-medium"
                 >
                   Cancel
                 </button>
@@ -165,10 +165,10 @@ export default function LocationsPage() {
           {locations.map((loc) => {
             const config = typeConfig[loc.type] || typeConfig.warehouse;
             return (
-              <div key={loc.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 hover:shadow-md transition-shadow">
+              <div key={loc.id} className="bg-white rounded-[2.2rem] shadow-sm border border-gray-200 p-5 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${config.color}`}>
+                    <div className={`w-10 h-10 rounded-[2.2rem] flex items-center justify-center ${config.color}`}>
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={config.icon} />
                       </svg>
@@ -184,13 +184,13 @@ export default function LocationsPage() {
                 <div className="flex gap-2 mt-4">
                   <button
                     onClick={() => handleEdit(loc)}
-                    className="flex-1 text-sm py-1.5 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 font-medium transition-colors"
+                    className="flex-1 text-sm py-1.5 text-blue-600 bg-blue-50 rounded-[2.2rem] hover:bg-blue-100 font-medium transition-colors"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDelete(loc.id)}
-                    className="flex-1 text-sm py-1.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 font-medium transition-colors"
+                    className="flex-1 text-sm py-1.5 text-red-600 bg-red-50 rounded-[2.2rem] hover:bg-red-100 font-medium transition-colors"
                   >
                     Delete
                   </button>

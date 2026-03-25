@@ -62,7 +62,7 @@ export default function ReportsPage() {
           <select
             value={exportLocation}
             onChange={(e) => setExportLocation(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="px-3 py-2 border border-gray-300 rounded-[1.2rem] text-sm"
           >
             <option value="">All Products</option>
             {locations.map((l) => (
@@ -71,7 +71,7 @@ export default function ReportsPage() {
           </select>
           <button
             onClick={handleExport}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm"
+            className="px-4 py-2 bg-green-600 text-white rounded-[1.2rem] hover:bg-green-700 font-medium text-sm"
           >
             Export Excel
           </button>
@@ -79,13 +79,13 @@ export default function ReportsPage() {
       </div>
 
       {/* Filters */}
-      <form onSubmit={handleFilter} className="bg-white rounded-xl shadow p-4 mb-6 flex flex-wrap gap-3 items-end">
+      <form onSubmit={handleFilter} className="bg-white rounded-[1.2rem] shadow p-4 mb-6 flex flex-wrap gap-3 items-end">
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
           <select
             value={filters.type}
             onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="px-3 py-2 border border-gray-300 rounded-[1.2rem] text-sm"
           >
             <option value="">All</option>
             <option value="stock_in">Stock In</option>
@@ -99,7 +99,7 @@ export default function ReportsPage() {
             type="date"
             value={filters.start_date}
             onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="px-3 py-2 border border-gray-300 rounded-[1.2rem] text-sm"
           />
         </div>
         <div>
@@ -108,10 +108,10 @@ export default function ReportsPage() {
             type="date"
             value={filters.end_date}
             onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="px-3 py-2 border border-gray-300 rounded-[1.2rem] text-sm"
           />
         </div>
-        <button type="submit" className="px-4 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 text-sm font-medium">
+        <button type="submit" className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 text-sm font-medium">
           Filter
         </button>
       </form>
@@ -123,7 +123,7 @@ export default function ReportsPage() {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto bg-white rounded-lg shadow">
+          <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>

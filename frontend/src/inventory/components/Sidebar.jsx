@@ -37,7 +37,7 @@ export default function Sidebar({ isOpen, onClose }) {
               to={item.path}
               onClick={onClose}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg mb-1 transition-colors ${
+                `flex items-center gap-3 px-4 py-3 rounded-[1.2rem] mb-1 transition-colors ${
                   isActive
                     ? 'bg-amber-700 text-white'
                     : 'text-gray-300 hover:bg-gray-800 hover:text-white'

@@ -40,6 +40,18 @@ const Product = sequelize
         allowNull: true,
         defaultValue: 0,
       },
+      category: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      weight: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      size: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
     }, {
       tableName: 'products',
       timestamps: true,

@@ -22,13 +22,25 @@ export default function ProductsPage() {
   const [form, setForm] = useState({
     name: '', description: '', image_url: '', barcode: '',
     cost_price: '', retail_price: '', wholesale_price: '',
+    category: '', weight: '', size: '',
   });
+  const [imagePreview, setImagePreview] = useState(null);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [deleteProduct, setDeleteProduct] = useState(null);
+  const [duplicateProduct, setDuplicateProduct] = useState(null);
+  const [duplicateQty, setDuplicateQty] = useState(1);
+  const categoryOptions = ['Singing Bowl', 'Thanka', 'Jewelleries', 'Thanka Locket'];
+  const productImageRef = useRef(null);
 
   const scanInputRef = useRef(null);
   const scanBufferRef = useRef('');
   const scanTimerRef = useRef(null);
   const lastKeyTimeRef = useRef(0);
   const fileInputRef = useRef(null);
+  const globalScanBufferRef = useRef('');
+  const globalLastKeyTimeRef = useRef(0);
+  const globalScanTimerRef = useRef(null);
 
   const fetchProducts = async () => {
     try {
@@ -46,7 +58,8 @@ export default function ProductsPage() {
   }, [search]);
 
   const resetForm = () => {
-    setForm({ name: '', description: '', image_url: '', barcode: '', cost_price: '', retail_price: '', wholesale_price: '' });
+    setForm({ name: '', description: '', image_url: '', barcode: '', cost_price: '', retail_price: '', wholesale_price: '', category: '', weight: '', size: '' });
+    setImagePreview(null);
     setEditingProduct(null);
     setShowForm(false);
   };
@@ -60,7 +73,11 @@ export default function ProductsPage() {
       cost_price: product.cost_price || '',
       retail_price: product.retail_price || '',
       wholesale_price: product.wholesale_price || '',
+      category: product.category || '',
+      weight: product.weight || '',
+      size: product.size || '',
     });
+    setImagePreview(product.image_url || null);
     setEditingProduct(product);
     setShowForm(true);
   };
@@ -80,10 +97,11 @@ export default function ProductsPage() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+  const handleDelete = async () => {
+    if (!deleteProduct) return;
     try {
-      await productsApi.delete(api, id);
+      await productsApi.delete(api, deleteProduct.id);
+      setDeleteProduct(null);
       fetchProducts();
     } catch (err) {
       alert('Failed to delete product');
@@ -142,6 +160,63 @@ export default function ProductsPage() {
     scanBufferRef.current = '';
     setShowScanner(true);
   };
+
+  // Global barcode scanner listener — auto-opens add product form on scan
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      // Skip if any modal is open or user is typing in an input/textarea
+      if (showForm || showScanner || showAddChoice) return;
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      const now = Date.now();
+
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const barcode = globalScanBufferRef.current.trim();
+        if (barcode.length >= 3) {
+          const matched = lookupBarcode(barcode);
+          setScannedBarcode(barcode);
+          setMatchedProduct(matched);
+          if (matched) {
+            setDuplicateProduct(matched);
+            setDuplicateQty(1);
+          } else {
+            setForm((prev) => ({
+              ...prev,
+              barcode,
+              name: '',
+              category: getCategoryFromBarcode(barcode),
+            }));
+            setShowForm(true);
+          }
+        }
+        globalScanBufferRef.current = '';
+        return;
+      }
+
+      if (e.key.length !== 1) return;
+
+      const timeDiff = now - globalLastKeyTimeRef.current;
+      globalLastKeyTimeRef.current = now;
+
+      if (timeDiff > 100) {
+        globalScanBufferRef.current = '';
+      }
+
+      globalScanBufferRef.current += e.key;
+
+      clearTimeout(globalScanTimerRef.current);
+      globalScanTimerRef.current = setTimeout(() => {
+        if (globalScanBufferRef.current.length < 3) {
+          globalScanBufferRef.current = '';
+        }
+      }, 300);
+    };
+
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [showForm, showScanner, showAddChoice, products]);
 
   // Auto-focus scanner input when modal opens
   useEffect(() => {
@@ -341,14 +416,46 @@ export default function ProductsPage() {
     setIsDragging(false);
   };
 
+  const getCategoryFromBarcode = (barcode) => {
+    if (!barcode) return '';
+    const upper = barcode.toUpperCase();
+    if (upper.includes('SB')) return 'Singing Bowl';
+    if (upper.includes('YA')) return 'Thanka';
+    return '';
+  };
+
   const handleScanComplete = () => {
     setShowScanner(false);
-    setForm({
-      ...form,
-      barcode: scannedBarcode,
-      name: matchedProduct ? matchedProduct.name : '',
-    });
-    setShowForm(true);
+    if (matchedProduct) {
+      setDuplicateProduct(matchedProduct);
+      setDuplicateQty(1);
+    } else {
+      setForm({
+        ...form,
+        barcode: scannedBarcode,
+        name: '',
+        category: getCategoryFromBarcode(scannedBarcode),
+      });
+      setShowForm(true);
+    }
+  };
+
+  const handleDuplicateStockIn = async () => {
+    if (!duplicateProduct) return;
+    try {
+      const locsRes = await api.get('/locations');
+      const locs = locsRes.data.data;
+      const guangzhou = locs.find((l) => l.name === 'Guangzhou Warehouse') || locs[0];
+      await api.post('/inventory/stock-in', {
+        product_id: duplicateProduct.id,
+        location_id: guangzhou.id,
+        quantity: duplicateQty,
+      });
+      setDuplicateProduct(null);
+      fetchProducts();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Stock in failed');
+    }
   };
 
   const handleManualBarcodeSubmit = () => {
@@ -363,7 +470,7 @@ export default function ProductsPage() {
         <h1 className="text-2xl font-bold text-gray-800">Products</h1>
         <button
           onClick={() => { resetForm(); setShowAddChoice(true); }}
-          className="px-4 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium"
+          className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
         >
           + Add Product
         </button>
@@ -376,7 +483,7 @@ export default function ProductsPage() {
           placeholder="Search products by name, barcode..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+          className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
         />
       </div>
 
@@ -389,7 +496,7 @@ export default function ProductsPage() {
             <div className="space-y-3">
               <button
                 onClick={() => { setShowAddChoice(false); setShowForm(true); }}
-                className="w-full flex items-center gap-3 px-5 py-4 rounded-xl border-2 border-gray-200 hover:border-amber-700 hover:bg-amber-50 transition-all duration-200 group"
+                className="w-full flex items-center gap-3 px-5 py-4 rounded-[1.2rem] border-2 border-gray-200 hover:border-amber-700 hover:bg-amber-50 transition-all duration-200 group"
               >
                 <span className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 group-hover:bg-amber-700 group-hover:text-white transition-all duration-200">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -404,7 +511,7 @@ export default function ProductsPage() {
               </button>
               <button
                 onClick={openScanner}
-                className="w-full flex items-center gap-3 px-5 py-4 rounded-xl border-2 border-gray-200 hover:border-amber-700 hover:bg-amber-50 transition-all duration-200 group"
+                className="w-full flex items-center gap-3 px-5 py-4 rounded-[1.2rem] border-2 border-gray-200 hover:border-amber-700 hover:bg-amber-50 transition-all duration-200 group"
               >
                 <span className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 group-hover:bg-amber-700 group-hover:text-white transition-all duration-200">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -467,10 +574,10 @@ export default function ProductsPage() {
 
             {/* Tabs: Device / Upload Image */}
             {scanStatus !== 'done' && (
-              <div className="flex mb-5 bg-gray-100 rounded-lg p-1">
+              <div className="flex mb-5 bg-gray-100 rounded-[1.2rem] p-1">
                 <button
                   onClick={() => { setScanMode('device'); setUploadPreview(null); setUploadError(''); }}
-                  className={`flex-1 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 py-2 rounded-[1.2rem] text-sm font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
                     scanMode === 'device' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
@@ -485,7 +592,7 @@ export default function ProductsPage() {
                 </button>
                 <button
                   onClick={() => { setScanMode('upload'); }}
-                  className={`flex-1 py-2 rounded-md text-sm font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 py-2 rounded-[1.2rem] text-sm font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
                     scanMode === 'upload' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
@@ -509,7 +616,7 @@ export default function ProductsPage() {
                   value={scannedBarcode}
                   onChange={(e) => setScannedBarcode(e.target.value)}
                   onKeyDown={handleScanKeyDown}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-center text-lg font-mono tracking-wider focus:outline-none focus:border-amber-500 transition-colors"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-[1.2rem] text-center text-lg font-mono tracking-wider focus:outline-none transition-colors"
                   placeholder="Waiting for scan..."
                   autoFocus
                 />
@@ -532,7 +639,7 @@ export default function ProductsPage() {
                     <img
                       src={uploadPreview}
                       alt="Uploaded barcode"
-                      className="max-h-48 mx-auto rounded-xl border border-gray-200 object-contain"
+                      className="max-h-48 mx-auto rounded-[1.2rem] border border-gray-200 object-contain"
                     />
                   </div>
                 ) : (
@@ -541,7 +648,7 @@ export default function ProductsPage() {
                     onDrop={handleDrop}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
-                    className={`border-2 border-dashed rounded-xl p-8 cursor-pointer transition-all duration-200 mb-4 ${
+                    className={`border-2 border-dashed rounded-[1.2rem] p-8 cursor-pointer transition-all duration-200 mb-4 ${
                       isDragging
                         ? 'border-amber-500 bg-amber-50 scale-[1.02]'
                         : 'border-gray-300 hover:border-amber-500 hover:bg-amber-50'
@@ -558,7 +665,7 @@ export default function ProductsPage() {
                 )}
 
                 {uploadError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 mb-3">
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-[1.2rem] text-sm text-red-600 mb-3">
                     {uploadError}
                   </div>
                 )}
@@ -577,7 +684,7 @@ export default function ProductsPage() {
             {/* Scan Result */}
             {scanStatus === 'done' && (
               <div>
-                <div className="p-4 bg-green-50 rounded-xl border border-green-200 mb-4 text-center">
+                <div className="p-4 bg-green-50 rounded-[1.2rem] border border-green-200 mb-4 text-center">
                   <p className="text-sm text-green-600 mb-1">Detected barcode</p>
                   <p className="text-lg font-mono font-bold text-green-800">{scannedBarcode}</p>
                 </div>
@@ -586,13 +693,13 @@ export default function ProductsPage() {
                   <img
                     src={uploadPreview}
                     alt="Scanned"
-                    className="max-h-32 mx-auto rounded-lg border border-gray-200 object-contain mb-4"
+                    className="max-h-32 mx-auto rounded-[1.2rem] border border-gray-200 object-contain mb-4"
                   />
                 )}
 
                 {/* Product found — show info */}
                 {matchedProduct ? (
-                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-200 mb-4">
+                  <div className="p-4 bg-blue-50 rounded-[1.2rem] border border-blue-200 mb-4">
                     <div className="flex items-center gap-2 mb-2">
                       <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -601,9 +708,9 @@ export default function ProductsPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       {matchedProduct.image_url ? (
-                        <img src={matchedProduct.image_url} alt={matchedProduct.name} className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />
+                        <img src={matchedProduct.image_url} alt={matchedProduct.name} className="w-14 h-14 rounded-[1.2rem] object-cover flex-shrink-0" />
                       ) : (
-                        <div className="w-14 h-14 bg-blue-100 rounded-lg flex items-center justify-center text-blue-400 text-xs flex-shrink-0">N/A</div>
+                        <div className="w-14 h-14 bg-blue-100 rounded-[1.2rem] flex items-center justify-center text-blue-400 text-xs flex-shrink-0">N/A</div>
                       )}
                       <div className="text-left min-w-0">
                         <p className="font-bold text-gray-800 truncate">{matchedProduct.name}</p>
@@ -616,7 +723,7 @@ export default function ProductsPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 mb-4 text-center">
+                  <div className="p-3 bg-amber-50 rounded-[1.2rem] border border-amber-200 mb-4 text-center">
                     <p className="text-sm text-amber-700">No existing product matches this barcode. You can use it to create a new product.</p>
                   </div>
                 )}
@@ -629,13 +736,13 @@ export default function ProductsPage() {
                 <>
                   <button
                     onClick={handleScanComplete}
-                    className="flex-1 py-2.5 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium transition-colors"
+                    className="flex-1 py-2.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium transition-colors"
                   >
                     {matchedProduct ? 'Add Product' : 'Use This Barcode'}
                   </button>
                   <button
                     onClick={() => { setScannedBarcode(''); setScanStatus('waiting'); setUploadPreview(null); setUploadError(''); setMatchedProduct(null); scanBufferRef.current = ''; if (scanMode === 'device') scanInputRef.current?.focus(); }}
-                    className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition-colors"
+                    className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium transition-colors"
                   >
                     Scan Again
                   </button>
@@ -646,7 +753,7 @@ export default function ProductsPage() {
                     <button
                       onClick={handleManualBarcodeSubmit}
                       disabled={!scannedBarcode.trim()}
-                      className="flex-1 py-2.5 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium transition-colors disabled:opacity-40"
+                      className="flex-1 py-2.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium transition-colors disabled:opacity-40"
                     >
                       Use This Barcode
                     </button>
@@ -654,14 +761,14 @@ export default function ProductsPage() {
                   {scanMode === 'upload' && !uploadPreview && (
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="flex-1 py-2.5 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium transition-colors"
+                      className="flex-1 py-2.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium transition-colors"
                     >
                       Choose Image
                     </button>
                   )}
                   <button
                     onClick={() => { setShowScanner(false); setUploadPreview(null); }}
-                    className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition-colors"
+                    className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium transition-colors"
                   >
                     Cancel
                   </button>
@@ -680,7 +787,7 @@ export default function ProductsPage() {
               {editingProduct ? 'Edit Product' : 'Add New Product'}
             </h2>
             {form.barcode && !editingProduct && (
-              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center gap-2">
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-[1.2rem] text-sm text-amber-800 flex items-center gap-2">
                 <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <rect x="2" y="4" width="20" height="16" rx="2" />
                   <line x1="6" y1="8" x2="6" y2="16" />
@@ -691,44 +798,130 @@ export default function ProductsPage() {
               </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  autoFocus
-                />
+              {/* Row 1: Name + Upload Picture */}
+              <div className="flex justify-between items-start">
+                <div className="flex-1 max-w-[65%]">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <input
+                    type="text"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={productImageRef}
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const url = URL.createObjectURL(file);
+                        setImagePreview(url);
+                        setForm({ ...form, image_url: url });
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => productImageRef.current?.click()}
+                    className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors overflow-hidden"
+                  >
+                    {imagePreview ? (
+                      <img src={imagePreview} alt="Preview" className="w-full h-full object-cover rounded-[1.2rem]" />
+                    ) : (
+                      <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 15V3" />
+                        <path d="M7 7l5-5 5 5" />
+                        <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
+
+              {/* Row 2: Category + Barcode */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none bg-white text-left flex items-center justify-between"
+                  >
+                    <span className={form.category ? 'text-gray-900' : 'text-gray-400'}>
+                      {form.category || 'Select category'}
+                    </span>
+                    <svg className={`w-4 h-4 text-gray-500 transition-transform ${showCategoryDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showCategoryDropdown && (
+                    <ul className="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-[1.2rem] shadow-lg overflow-hidden">
+                      {categoryOptions.map((option) => (
+                        <li
+                          key={option}
+                          onClick={() => {
+                            setForm({ ...form, category: option });
+                            setShowCategoryDropdown(false);
+                          }}
+                          className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors ${form.category === option ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                        >
+                          {option}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+                  <input
+                    type="text"
+                    value={form.barcode}
+                    onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Row 3: Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
-                <input
-                  type="text"
-                  value={form.image_url}
-                  onChange={(e) => setForm({ ...form, image_url: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                />
+
+              {/* Row 4: Weight, Size */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Weight</label>
+                  <input
+                    type="text"
+                    value={form.weight}
+                    onChange={(e) => setForm({ ...form, weight: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Size</label>
+                  <input
+                    type="text"
+                    value={form.size}
+                    onChange={(e) => setForm({ ...form, size: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
-                <input
-                  type="text"
-                  value={form.barcode}
-                  onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent font-mono"
-                />
-              </div>
+
+              {/* Row 5: Cost Price, Wholesale Price, Retail Price */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Cost Price</label>
@@ -737,17 +930,7 @@ export default function ProductsPage() {
                     step="0.01"
                     value={form.cost_price}
                     onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Retail Price</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.retail_price}
-                    onChange={(e) => setForm({ ...form, retail_price: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                   />
                 </div>
                 <div>
@@ -757,21 +940,31 @@ export default function ProductsPage() {
                     step="0.01"
                     value={form.wholesale_price}
                     onChange={(e) => setForm({ ...form, wholesale_price: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Retail Price</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.retail_price}
+                    onChange={(e) => setForm({ ...form, retail_price: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                   />
                 </div>
               </div>
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
-                  className="flex-1 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium"
+                  className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
                 >
                   {editingProduct ? 'Update' : 'Create'}
                 </button>
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+                  className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
                 >
                   Cancel
                 </button>
@@ -787,16 +980,18 @@ export default function ProductsPage() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-700"></div>
         </div>
       ) : (
-        <div className="overflow-x-auto bg-white rounded-lg shadow">
+        <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Image</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Barcode</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Weight</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Retail</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Wholesale</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Retail</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
@@ -805,7 +1000,12 @@ export default function ProductsPage() {
                 <tr key={p.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
                     {p.image_url ? (
-                      <img src={p.image_url} alt={p.name} className="w-10 h-10 rounded object-cover" />
+                      <img
+                        src={p.image_url}
+                        alt={p.name}
+                        className="w-10 h-10 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => setPreviewImage(p.image_url)}
+                      />
                     ) : (
                       <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
                         N/A
@@ -814,9 +1014,11 @@ export default function ProductsPage() {
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-800">{p.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
+                  <td className="px-4 py-3 text-sm">{p.weight ? `${p.weight} kg` : '-'}</td>
+                  <td className="px-4 py-3 text-sm">{p.size || '-'}</td>
                   <td className="px-4 py-3 text-sm">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-sm">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
                   <td className="px-4 py-3 text-sm">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
+                  <td className="px-4 py-3 text-sm">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
                   <td className="px-4 py-3 text-sm">
                     <button
                       onClick={() => handleEdit(p)}
@@ -825,7 +1027,7 @@ export default function ProductsPage() {
                       Edit
                     </button>
                     <button
-                      onClick={() => handleDelete(p.id)}
+                      onClick={() => setDeleteProduct(p)}
                       className="text-red-600 hover:text-red-800"
                     >
                       Delete
@@ -835,13 +1037,110 @@ export default function ProductsPage() {
               ))}
               {products.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
                     No products found. Click "Add Product" to get started.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+      )}
+      {/* Duplicate Product Popup */}
+      {duplicateProduct && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[1.2rem] shadow-xl p-6 w-full max-w-sm">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">Product Already Exists</h3>
+            <p className="text-gray-600 mb-4">
+              Do you want to add <span className="font-semibold">{duplicateProduct.name}</span> again?
+            </p>
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDuplicateQty(Math.max(1, duplicateQty - 1))}
+                  className="w-10 h-10 flex items-center justify-center border border-gray-300 rounded-[1.2rem] text-lg font-bold text-gray-600 hover:bg-gray-100"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  value={duplicateQty}
+                  onChange={(e) => setDuplicateQty(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-[1.2rem] text-center focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setDuplicateQty(duplicateQty + 1)}
+                  className="w-10 h-10 flex items-center justify-center border border-gray-300 rounded-[1.2rem] text-lg font-bold text-gray-600 hover:bg-gray-100"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={handleDuplicateStockIn}
+                className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
+              >
+                Add Stock
+              </button>
+              <button
+                onClick={() => setDuplicateProduct(null)}
+                className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Popup */}
+      {deleteProduct && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[1.2rem] shadow-xl p-6 w-full max-w-sm text-center">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">Delete Product</h3>
+            <p className="text-gray-600 mb-5">
+              Are you sure you want to delete <span className="font-semibold">{deleteProduct.name}</span>?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleDelete}
+                className="flex-1 py-2 bg-red-600 text-white rounded-[1.2rem] hover:bg-red-700 font-medium"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setDeleteProduct(null)}
+                className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Preview Popup */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-lg max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <img src={previewImage} alt="Product" className="max-w-full max-h-[80vh] object-contain rounded-[1.2rem]" />
+          </div>
         </div>
       )}
     </div>

@@ -52,7 +52,7 @@ export default function BarcodeScanner({ onScan, onError }) {
       <div
         id="barcode-scanner"
         ref={scannerRef}
-        className="w-full max-w-md mx-auto rounded-lg overflow-hidden bg-black"
+        className="w-full max-w-md mx-auto rounded-[1.2rem] overflow-hidden bg-black"
         style={{ minHeight: scanning ? 300 : 0 }}
       />
 
@@ -60,14 +60,14 @@ export default function BarcodeScanner({ onScan, onError }) {
         {!scanning ? (
           <button
             onClick={startScanning}
-            className="px-6 py-3 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium text-lg"
+            className="px-6 py-3 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium text-lg"
           >
             Start Scanner
           </button>
         ) : (
           <button
             onClick={stopScanning}
-            className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-lg"
+            className="px-6 py-3 bg-red-600 text-white rounded-[1.2rem] hover:bg-red-700 font-medium text-lg"
           >
             Stop Scanner
           </button>

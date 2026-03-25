@@ -47,12 +47,12 @@ export default function DataTable({ columns, data, searchable = true, searchPlac
             placeholder={searchPlaceholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+            className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
           />
         </div>
       )}
 
-      <div className="overflow-x-auto bg-white rounded-lg shadow">
+      <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>

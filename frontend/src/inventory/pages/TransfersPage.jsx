@@ -134,7 +134,7 @@ export default function TransfersPage() {
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Transfer / Checkout</h1>
 
       {message && (
-        <div className={`mb-4 p-4 rounded-lg flex items-center gap-2 ${
+        <div className={`mb-4 p-4 rounded-[1.2rem] flex items-center gap-2 ${
           message.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' :
           'bg-red-50 border border-red-200 text-red-700'
         }`}>
@@ -154,7 +154,7 @@ export default function TransfersPage() {
       {/* Location Selection — Stock Out / Stock In */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {/* Stock Out From */}
-        <div className="bg-white rounded-xl shadow p-5 border-l-4 border-red-500">
+        <div className="bg-white rounded-[1.2rem] shadow p-5 border-l-4 border-red-500">
           <div className="flex items-center gap-2 mb-3">
             <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -164,12 +164,12 @@ export default function TransfersPage() {
           <select
             value={fromLocationId}
             onChange={(e) => setFromLocationId(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-400 focus:border-transparent text-sm"
+            className="w-full px-3 py-2.5 border border-gray-300 rounded-[1.2rem] focus:outline-none text-sm"
           >
             <option value="">Select source location</option>
             {defaultWarehouse && (
               <option key={defaultWarehouse.id} value={defaultWarehouse.id}>
-                Guangzhou Warehouse (Default)
+                Guangzhou Warehouse
               </option>
             )}
             {otherLocations.map((l) => (
@@ -188,7 +188,7 @@ export default function TransfersPage() {
         </div>
 
         {/* Stock In To */}
-        <div className="bg-white rounded-xl shadow p-5 border-l-4 border-green-500">
+        <div className="bg-white rounded-[1.2rem] shadow p-5 border-l-4 border-green-500">
           <div className="flex items-center gap-2 mb-3">
             <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -198,12 +198,12 @@ export default function TransfersPage() {
           <select
             value={toLocationId}
             onChange={(e) => setToLocationId(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:border-transparent text-sm"
+            className="w-full px-3 py-2.5 border border-gray-300 rounded-[1.2rem] focus:outline-none text-sm"
           >
             <option value="">Select destination location</option>
             {defaultWarehouse && defaultWarehouse.id !== fromLocationId && (
               <option key={defaultWarehouse.id} value={defaultWarehouse.id}>
-                Guangzhou Warehouse (Default)
+                Guangzhou Warehouse
               </option>
             )}
             {otherLocations.filter((l) => l.id !== fromLocationId).map((l) => (
@@ -223,7 +223,7 @@ export default function TransfersPage() {
       </div>
 
       {/* Cart */}
-      <div className="bg-white rounded-xl shadow mb-6">
+      <div className="bg-white rounded-[1.2rem] shadow mb-6">
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -239,7 +239,7 @@ export default function TransfersPage() {
           <button
             onClick={() => { setAddForm({ product_id: '', quantity: 1 }); setAddingProduct(true); }}
             disabled={!fromLocationId || !toLocationId}
-            className="px-4 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium text-sm disabled:opacity-40 transition-colors"
+            className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium text-sm disabled:opacity-40 transition-colors"
           >
             + Add Item
           </button>
@@ -261,9 +261,9 @@ export default function TransfersPage() {
                 <div key={item.product_id} className="flex items-center gap-4 p-4 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors">
                   {/* Image */}
                   {item.product_image ? (
-                    <img src={item.product_image} alt={item.product_name} className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                    <img src={item.product_image} alt={item.product_name} className="w-12 h-12 rounded-[1.2rem] object-cover flex-shrink-0" />
                   ) : (
-                    <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                    <div className="w-12 h-12 bg-gray-200 rounded-[1.2rem] flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
                       N/A
                     </div>
                   )}
@@ -283,7 +283,7 @@ export default function TransfersPage() {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => updateCartQty(item.product_id, item.quantity - 1)}
-                      className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-medium transition-colors"
+                      className="w-8 h-8 rounded-[1.2rem] bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-medium transition-colors"
                     >
                       -
                     </button>
@@ -292,13 +292,13 @@ export default function TransfersPage() {
                       min="1"
                       value={item.quantity}
                       onChange={(e) => updateCartQty(item.product_id, parseInt(e.target.value) || 1)}
-                      className={`w-14 text-center py-1 border rounded-lg text-sm font-medium ${
+                      className={`w-14 text-center py-1 border rounded-[1.2rem] text-sm font-medium ${
                         overStock ? 'border-red-300 text-red-600 bg-red-50' : 'border-gray-300'
                       }`}
                     />
                     <button
                       onClick={() => updateCartQty(item.product_id, item.quantity + 1)}
-                      className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-medium transition-colors"
+                      className="w-8 h-8 rounded-[1.2rem] bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-medium transition-colors"
                     >
                       +
                     </button>
@@ -328,7 +328,7 @@ export default function TransfersPage() {
               <button
                 onClick={handleCheckout}
                 disabled={processing || !fromLocationId || !toLocationId || cart.length === 0}
-                className="w-full py-3 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-semibold text-lg disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
+                className="w-full py-3 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-semibold text-lg disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
               >
                 {processing ? (
                   <>
@@ -363,7 +363,7 @@ export default function TransfersPage() {
                 <select
                   value={addForm.product_id}
                   onChange={(e) => setAddForm({ ...addForm, product_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                 >
                   <option value="">Select product</option>
                   {products.map((p) => {
@@ -383,7 +383,7 @@ export default function TransfersPage() {
                   min="1"
                   value={addForm.quantity}
                   onChange={(e) => setAddForm({ ...addForm, quantity: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                 />
                 {addForm.product_id && fromLocationId && (
                   <p className="mt-1 text-xs text-gray-500">
@@ -395,13 +395,13 @@ export default function TransfersPage() {
                 <button
                   onClick={addToCart}
                   disabled={!addForm.product_id || addForm.quantity < 1}
-                  className="flex-1 py-2 bg-amber-700 text-white rounded-lg hover:bg-amber-800 font-medium disabled:opacity-40 transition-colors"
+                  className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium disabled:opacity-40 transition-colors"
                 >
                   Add to Cart
                 </button>
                 <button
                   onClick={() => setAddingProduct(false)}
-                  className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition-colors"
+                  className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium transition-colors"
                 >
                   Cancel
                 </button>
@@ -412,7 +412,7 @@ export default function TransfersPage() {
       )}
 
       {/* Transfer History */}
-      <div className="bg-white rounded-xl shadow p-6">
+      <div className="bg-white rounded-[1.2rem] shadow p-6">
         <h2 className="text-lg font-semibold mb-4">Recent Transfers</h2>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">

@@ -36,13 +36,13 @@ export default function Dashboard() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {cards.map((card) => (
-          <div key={card.label} className="bg-white rounded-xl shadow p-6">
+          <div key={card.label} className="bg-white rounded-[1.2rem] shadow p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-500">{card.label}</p>
                 <p className="text-3xl font-bold text-gray-800 mt-1">{card.value}</p>
               </div>
-              <div className={`w-12 h-12 ${card.color} rounded-lg flex items-center justify-center`}>
+              <div className={`w-12 h-12 ${card.color} rounded-[1.2rem] flex items-center justify-center`}>
                 <span className="text-white text-xl font-bold">{card.value}</span>
               </div>
             </div>
@@ -51,7 +51,7 @@ export default function Dashboard() {
       </div>
 
       {/* Recent Transactions */}
-      <div className="bg-white rounded-xl shadow p-6">
+      <div className="bg-white rounded-[1.2rem] shadow p-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Recent Transactions</h2>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
