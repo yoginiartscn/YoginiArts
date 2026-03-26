@@ -1,13 +1,18 @@
 const express = require('express');
 const Location = require('../models/Location');
 const { authenticate } = require('../middleware/auth');
+const cache = require('../cache');
 
 const router = express.Router();
 
 // GET /
 router.get('/', authenticate, async (req, res) => {
   try {
+    const cached = cache.get('locations');
+    if (cached) return res.json({ success: true, data: cached });
+
     const locations = await Location.findAll({ order: [['name', 'ASC']] });
+    cache.set('locations', locations, 5000);
     res.json({ success: true, data: locations });
   } catch (error) {
     console.error('Get locations error:', error);
@@ -42,6 +47,8 @@ router.post('/', authenticate, async (req, res) => {
     }
 
     const location = await Location.create({ name, type });
+    cache.invalidate('locations');
+    cache.invalidate('summary');
     res.status(201).json({ success: true, data: location });
   } catch (error) {
     if (error.name === 'SequelizeUniqueConstraintError') {
@@ -70,6 +77,7 @@ router.put('/:id', authenticate, async (req, res) => {
       type: type !== undefined ? type : location.type,
     });
 
+    cache.invalidate('locations');
     res.json({ success: true, data: location });
   } catch (error) {
     console.error('Update location error:', error);
@@ -86,6 +94,7 @@ router.delete('/:id', authenticate, async (req, res) => {
     }
 
     await location.destroy();
+    cache.invalidateAll();
     res.json({ success: true, message: 'Location deleted' });
   } catch (error) {
     console.error('Delete location error:', error);

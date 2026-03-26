@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { Product, Location, Inventory } = require('../models');
 const { authenticate } = require('../middleware/auth');
+const cache = require('../cache');
 
 const router = express.Router();
 
@@ -38,8 +39,11 @@ const upload = multer({
 router.get('/', authenticate, async (req, res) => {
   try {
     const { search } = req.query;
-    const where = {};
+    const cacheKey = `products:${search || ''}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return res.json({ success: true, data: cached });
 
+    const where = {};
     if (search) {
       where[Op.or] = [
         { name: { [Op.iLike]: `%${search}%` } },
@@ -49,6 +53,7 @@ router.get('/', authenticate, async (req, res) => {
     }
 
     const products = await Product.findAll({ where, order: [['createdAt', 'DESC']] });
+    cache.set(cacheKey, products, 3000);
     res.json({ success: true, data: products });
   } catch (error) {
     console.error('Get products error:', error);
@@ -114,27 +119,30 @@ router.post('/', authenticate, upload.single('image'), async (req, res) => {
       await gzInv.update({ quantity: gzInv.quantity + 1 });
     }
 
-    // Create inventory records (quantity 0) at other locations
-    for (const loc of locations) {
-      if (loc.id !== guangzhou.id) {
-        await Inventory.findOrCreate({
-          where: { product_id: product.id, location_id: loc.id },
-          defaults: { quantity: 0 },
-        });
-      }
-    }
-
-    // Log the stock-in transaction
+    // Create inventory records (quantity 0) at other locations + log transaction in parallel
     const { Transaction } = require('../models');
-    await Transaction.create({
-      type: 'stock_in',
-      product_id: product.id,
-      to_location_id: guangzhou.id,
-      quantity: 1,
-      notes: 'Auto stock-in on product creation',
-      created_by: req.user?.id || null,
-    });
+    await Promise.all([
+      ...locations
+        .filter((loc) => loc.id !== guangzhou.id)
+        .map((loc) =>
+          Inventory.findOrCreate({
+            where: { product_id: product.id, location_id: loc.id },
+            defaults: { quantity: 0 },
+          })
+        ),
+      Transaction.create({
+        type: 'stock_in',
+        product_id: product.id,
+        to_location_id: guangzhou.id,
+        quantity: 1,
+        notes: 'Auto stock-in on product creation',
+        created_by: req.user?.id || null,
+      }),
+    ]);
 
+    cache.invalidate('products');
+    cache.invalidate('summary');
+    cache.invalidate('inventory');
     res.status(201).json({ success: true, data: product });
   } catch (error) {
     if (error.name === 'SequelizeUniqueConstraintError') {
@@ -179,6 +187,7 @@ router.put('/:id', authenticate, upload.single('image'), async (req, res) => {
       size: size !== undefined ? size : product.size,
     });
 
+    cache.invalidate('products');
     res.json({ success: true, data: product });
   } catch (error) {
     if (error.name === 'SequelizeUniqueConstraintError') {
@@ -204,6 +213,9 @@ router.delete('/:id', authenticate, async (req, res) => {
     }
 
     await product.destroy();
+    cache.invalidate('products');
+    cache.invalidate('inventory');
+    cache.invalidate('summary');
     res.json({ success: true, message: 'Product deleted' });
   } catch (error) {
     console.error('Delete product error:', error);

@@ -83,4 +83,14 @@ export const reportsApi = {
       responseType: 'blob',
     });
   },
+  exportSales: (api, { locationId, startDate, endDate } = {}) => {
+    const params = new URLSearchParams();
+    if (locationId) params.append('location_id', locationId);
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    const query = params.toString();
+    return api.get(`/reports/export/sales${query ? `?${query}` : ''}`, {
+      responseType: 'blob',
+    });
+  },
 };

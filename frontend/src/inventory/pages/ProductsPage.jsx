@@ -1128,46 +1128,46 @@ export default function ProductsPage() {
               return (
                 <div key={cat}>
                   <h2 className="text-lg font-bold text-gray-800 mb-3">{td(cat)}</h2>
-                  <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('image')}</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('name')}</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('barcode')}</th>
-                          {cat !== 'Thanka' && cat !== 'Thanka Locket' && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('weight')}</th>}
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('size')}</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('cost')}</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('wholesale')}</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('retail')}</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('actions')}</th>
+                  <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+                    <table className="min-w-full border-separate border-spacing-0">
+                      <thead>
+                        <tr className="bg-gray-50/80">
+                          <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('image')}</th>
+                          <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('name')}</th>
+                          <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('barcode')}</th>
+                          {cat !== 'Thanka' && cat !== 'Thanka Locket' && <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('weight')}</th>}
+                          <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('size')}</th>
+                          <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('cost')}</th>
+                          <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('wholesale')}</th>
+                          <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('retail')}</th>
+                          <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('actions')}</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-200">
+                      <tbody>
                         {catProducts.map((p) => (
-                          <tr key={p.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3">
+                          <tr key={p.id} className="transition-colors hover:bg-amber-50/60">
+                            <td className="px-5 py-4 border-b border-gray-100">
                               {p.image_url ? (
                                 <img
                                   src={getImageUrl(p.image_url)}
                                   alt={p.name}
-                                  className="w-10 h-10 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                  className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
                                   onClick={() => setPreviewImage(getImageUrl(p.image_url))}
                                 />
                               ) : (
-                                <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">
                                   N/A
                                 </div>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-sm font-medium text-gray-800">{p.name}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
-                            {cat !== 'Thanka' && cat !== 'Thanka Locket' && <td className="px-4 py-3 text-sm">{p.weight || '-'}</td>}
-                            <td className="px-4 py-3 text-sm">{p.size || '-'}</td>
-                            <td className="px-4 py-3 text-sm">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
-                            <td className="px-4 py-3 text-sm">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
-                            <td className="px-4 py-3 text-sm">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
-                            <td className="px-4 py-3 text-sm">
+                            <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{p.name}</td>
+                            <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
+                            {cat !== 'Thanka' && cat !== 'Thanka Locket' && <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{p.weight || '-'}</td>}
+                            <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{p.size || '-'}</td>
+                            <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
+                            <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
+                            <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
+                            <td className="px-5 py-4 border-b border-gray-100 text-sm">
                               <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
                               <button onClick={() => setDeleteProduct(p)} className="text-red-600 hover:text-red-800">Delete</button>
                             </td>
@@ -1187,46 +1187,46 @@ export default function ProductsPage() {
             return (
               <div>
                 <h2 className="text-lg font-bold text-gray-800 mb-3">{t('other')}</h2>
-                <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('image')}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('name')}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('barcode')}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('weight')}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('size')}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('cost')}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('wholesale')}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('retail')}</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('actions')}</th>
+                <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+                  <table className="min-w-full border-separate border-spacing-0">
+                    <thead>
+                      <tr className="bg-gray-50/80">
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('image')}</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('name')}</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('barcode')}</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('weight')}</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('size')}</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('cost')}</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('wholesale')}</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('retail')}</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('actions')}</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody>
                       {uncategorized.map((p) => (
-                        <tr key={p.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3">
+                        <tr key={p.id} className="transition-colors hover:bg-amber-50/60">
+                          <td className="px-5 py-4 border-b border-gray-100">
                             {p.image_url ? (
                               <img
                                 src={getImageUrl(p.image_url)}
                                 alt={p.name}
-                                className="w-10 h-10 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
                                 onClick={() => setPreviewImage(getImageUrl(p.image_url))}
                               />
                             ) : (
-                              <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">
                                 N/A
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm font-medium text-gray-800">{p.name}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
-                          <td className="px-4 py-3 text-sm">{p.weight || '-'}</td>
-                          <td className="px-4 py-3 text-sm">{p.size || '-'}</td>
-                          <td className="px-4 py-3 text-sm">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
-                          <td className="px-4 py-3 text-sm">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
-                          <td className="px-4 py-3 text-sm">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
-                          <td className="px-4 py-3 text-sm">
+                          <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{p.name}</td>
+                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
+                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{p.weight || '-'}</td>
+                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{p.size || '-'}</td>
+                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
+                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
+                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
+                          <td className="px-5 py-4 border-b border-gray-100 text-sm">
                             <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
                             <button onClick={() => setDeleteProduct(p)} className="text-red-600 hover:text-red-800">Delete</button>
                           </td>

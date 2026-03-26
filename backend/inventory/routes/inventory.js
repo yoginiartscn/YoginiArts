@@ -2,6 +2,7 @@ const express = require('express');
 const sequelize = require('../../config/postgres');
 const { Inventory, Product, Location, Transaction } = require('../models');
 const { authenticate } = require('../middleware/auth');
+const cache = require('../cache');
 
 const router = express.Router();
 
@@ -9,18 +10,41 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
   try {
     const { location_id } = req.query;
+    const cacheKey = `inventory:${location_id || 'all'}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return res.json({ success: true, data: cached });
+
     const where = {};
     if (location_id) where.location_id = location_id;
 
-    const inventory = await Inventory.findAll({
-      where,
-      include: [
-        { model: Product, as: 'product' },
-        { model: Location, as: 'location' },
-      ],
-      order: [['createdAt', 'DESC']],
-    });
+    let [inventory, gzWarehouse] = await Promise.all([
+      Inventory.findAll({
+        where,
+        include: [
+          { model: Product, as: 'product' },
+          { model: Location, as: 'location' },
+        ],
+        order: [['createdAt', 'DESC']],
+      }),
+      Location.findOne({ where: { name: 'Guangzhou Warehouse' } }),
+    ]);
 
+    if (gzWarehouse) {
+      const gzId = String(gzWarehouse.id);
+      const viewingGz = location_id && String(location_id) === gzId;
+
+      if (!viewingGz) {
+        // For non-Guangzhou locations: hide products with 0 stock at that location
+        inventory = inventory.filter((inv) => {
+          // Always show Guangzhou records (in All Locations view)
+          if (String(inv.location_id) === gzId) return true;
+          // Hide 0-stock items at other locations
+          return inv.quantity > 0;
+        });
+      }
+    }
+
+    cache.set(cacheKey, inventory, 3000);
     res.json({ success: true, data: inventory });
   } catch (error) {
     console.error('Get inventory error:', error);
@@ -69,6 +93,7 @@ router.post('/stock-in', authenticate, async (req, res) => {
       ],
     });
 
+    cache.invalidateAll();
     res.status(201).json({ success: true, data: updated });
   } catch (error) {
     await t.rollback();
@@ -130,6 +155,7 @@ router.post('/transfer', authenticate, async (req, res) => {
     }, { transaction: t });
 
     await t.commit();
+    cache.invalidateAll();
     res.json({ success: true, message: 'Transfer completed successfully' });
   } catch (error) {
     await t.rollback();
@@ -154,19 +180,17 @@ router.post('/sale', authenticate, async (req, res) => {
       return res.status(400).json({ success: false, message: 'price_type must be retail or wholesale' });
     }
 
-    // Check stock
-    const inv = await Inventory.findOne({
-      where: { product_id, location_id },
-      transaction: t,
-    });
+    // Check stock and get product price in parallel
+    const [inv, product] = await Promise.all([
+      Inventory.findOne({ where: { product_id, location_id }, transaction: t }),
+      Product.findByPk(product_id, { transaction: t }),
+    ]);
 
     if (!inv || inv.quantity < quantity) {
       await t.rollback();
       return res.status(400).json({ success: false, message: 'Insufficient stock' });
     }
 
-    // Get product price
-    const product = await Product.findByPk(product_id, { transaction: t });
     const unit_price = price_type === 'retail' ? product.retail_price : product.wholesale_price;
 
     // Deduct stock
@@ -185,6 +209,7 @@ router.post('/sale', authenticate, async (req, res) => {
     }, { transaction: t });
 
     await t.commit();
+    cache.invalidateAll();
     res.json({ success: true, message: 'Sale completed', unit_price, total: unit_price * quantity });
   } catch (error) {
     await t.rollback();

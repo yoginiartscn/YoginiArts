@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi';
 import { productsApi, locationsApi, inventoryApi, reportsApi, getImageUrl } from '../utils/inventoryApi';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function TransfersPage() {
   const api = useApi();
+  const navigate = useNavigate();
   const { t, td } = useLanguage();
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -36,6 +38,10 @@ export default function TransfersPage() {
   const [duplicateProduct, setDuplicateProduct] = useState(null);
   const [duplicateAddQty, setDuplicateAddQty] = useState(1);
 
+  // Insufficient stock popup
+  const [showInsufficientStock, setShowInsufficientStock] = useState(false);
+  const [insufficientProduct, setInsufficientProduct] = useState(null);
+
   // Location selection popup (when scanning without locations set)
   const [showLocationPopup, setShowLocationPopup] = useState(false);
   const [pendingBarcode, setPendingBarcode] = useState('');
@@ -56,6 +62,17 @@ export default function TransfersPage() {
   const productImageRef = useRef(null);
   const recordsDropdownRef = useRef(null);
 
+  // Custom location dropdown state
+  const [fromDropdownOpen, setFromDropdownOpen] = useState(false);
+  const [toDropdownOpen, setToDropdownOpen] = useState(false);
+  const fromDropdownRef = useRef(null);
+  const toDropdownRef = useRef(null);
+
+  // Custom product dropdown state (Add Item modal)
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const productDropdownRef = useRef(null);
+
   // Multi-scan mode
   const [multiScanMode, setMultiScanMode] = useState(false);
   const [multiScanLog, setMultiScanLog] = useState([]);
@@ -65,7 +82,7 @@ export default function TransfersPage() {
   const globalLastKeyTimeRef = useRef(0);
   const globalScanTimerRef = useRef(null);
 
-  useEffect(() => {
+  const fetchTransferData = () => {
     Promise.all([
       productsApi.getAll(api),
       locationsApi.getAll(api),
@@ -80,6 +97,12 @@ export default function TransfersPage() {
       const defaultLoc = locs.find((l) => l.name === 'Guangzhou Warehouse');
       if (defaultLoc) setFromLocationId(defaultLoc.id);
     }).finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchTransferData();
+    const interval = setInterval(fetchTransferData, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const getStock = (productId, locationId) => {
@@ -104,6 +127,14 @@ export default function TransfersPage() {
   };
 
   const addProductToCart = (product) => {
+    // Check stock availability
+    const stock = getStock(product.id, fromLocationId);
+    if (stock <= 0) {
+      setInsufficientProduct(product);
+      setShowInsufficientStock(true);
+      return;
+    }
+
     const existing = cart.find((item) => item.product_id === product.id);
     if (existing) {
       // Already in cart — show duplicate popup
@@ -133,17 +164,26 @@ export default function TransfersPage() {
     setDuplicateProduct(null);
   };
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
-    if (!recordsFilterOpen) return;
+    if (!recordsFilterOpen && !fromDropdownOpen && !toDropdownOpen) return;
     const handleClickOutside = (e) => {
       if (recordsDropdownRef.current && !recordsDropdownRef.current.contains(e.target)) {
         setRecordsFilterOpen(false);
       }
+      if (fromDropdownRef.current && !fromDropdownRef.current.contains(e.target)) {
+        setFromDropdownOpen(false);
+      }
+      if (toDropdownRef.current && !toDropdownRef.current.contains(e.target)) {
+        setToDropdownOpen(false);
+      }
+      if (productDropdownRef.current && !productDropdownRef.current.contains(e.target)) {
+        setProductDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [recordsFilterOpen]);
+  }, [recordsFilterOpen, fromDropdownOpen, toDropdownOpen, productDropdownOpen]);
 
   const handleRecordsFilter = async () => {
     try {
@@ -259,6 +299,15 @@ export default function TransfersPage() {
     const product = products.find((p) => p.id === addForm.product_id);
     if (!product) return;
 
+    // Check stock availability
+    const stock = getStock(product.id, fromLocationId);
+    if (stock <= 0) {
+      setInsufficientProduct(product);
+      setShowInsufficientStock(true);
+      setAddingProduct(false);
+      return;
+    }
+
     const existing = cart.find((item) => item.product_id === addForm.product_id);
     if (existing) {
       setCart(cart.map((item) =>
@@ -368,21 +417,26 @@ export default function TransfersPage() {
     if (pendingBarcode) {
       const matched = lookupBarcode(pendingBarcode);
       if (matched) {
-        // addProductToCart uses cart from state, so we call it after setting locations
-        const existing = cart.find((item) => item.product_id === matched.id);
-        if (existing) {
-          setCart(cart.map((item) =>
-            item.product_id === matched.id ? { ...item, quantity: item.quantity + 1 } : item
-          ));
+        const stock = getStock(matched.id, popupFromId);
+        if (stock <= 0) {
+          setInsufficientProduct(matched);
+          setShowInsufficientStock(true);
         } else {
-          setCart([...cart, {
-            product_id: matched.id,
-            product_name: matched.name,
-            product_barcode: matched.barcode,
-            product_image: matched.image_url,
-            product_weight: matched.weight,
-            quantity: 1,
-          }]);
+          const existing = cart.find((item) => item.product_id === matched.id);
+          if (existing) {
+            setCart(cart.map((item) =>
+              item.product_id === matched.id ? { ...item, quantity: item.quantity + 1 } : item
+            ));
+          } else {
+            setCart([...cart, {
+              product_id: matched.id,
+              product_name: matched.name,
+              product_barcode: matched.barcode,
+              product_image: matched.image_url,
+              product_weight: matched.weight,
+              quantity: 1,
+            }]);
+          }
         }
       } else {
         setNotFoundBarcode(pendingBarcode);
@@ -429,78 +483,109 @@ export default function TransfersPage() {
       )}
 
       {/* Location Selection — Stock Out / Stock In */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        {/* Stock Out From */}
-        <div className="bg-white rounded-[1.2rem] shadow p-5 border-l-4 border-red-500">
-          <div className="flex items-center gap-2 mb-3">
-            <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            <h2 className="font-semibold text-gray-800">{t('stockOutFrom')}</h2>
-          </div>
-          <select
-            value={fromLocationId}
-            onChange={(e) => setFromLocationId(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-[1.2rem] focus:outline-none text-sm"
-          >
-            <option value="">{t('selectSourceLocation')}</option>
-            {defaultWarehouse && (
-              <option key={defaultWarehouse.id} value={defaultWarehouse.id}>
-                Guangzhou Warehouse
-              </option>
+      <div className="mb-6">
+        <div className="flex items-center gap-3 max-w-xl mx-auto">
+          {/* Stock Out From */}
+          <div className="flex-1 relative" ref={fromDropdownRef}>
+            <h2 className="font-bold text-gray-800 mb-2">{t('stockOutFrom')}</h2>
+            <button
+              onClick={() => { if (cart.length > 0) return; setFromDropdownOpen(!fromDropdownOpen); setToDropdownOpen(false); }}
+              className={`w-full px-4 py-3 rounded-full text-sm text-left flex items-center justify-between transition-colors ${cart.length > 0 ? 'bg-[#800020]/60 cursor-not-allowed' : 'bg-[#800020] hover:bg-[#6b001a]'}`}
+            >
+              <span className={fromLocation ? 'text-white font-medium' : 'text-white/60'}>
+                {fromLocation ? fromLocation.name : t('selectSourceLocation')}
+              </span>
+              <svg className={`w-4 h-4 text-white/70 transition-transform ${fromDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {fromDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 z-50 overflow-hidden">
+                {defaultWarehouse && (
+                  <div
+                    onClick={() => { setFromLocationId(defaultWarehouse.id); if (toLocationId === defaultWarehouse.id) setToLocationId(''); setFromDropdownOpen(false); }}
+                    className={`px-4 py-2.5 text-sm cursor-pointer flex items-center justify-between hover:bg-gray-50 ${fromLocationId === defaultWarehouse.id ? 'bg-amber-50 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    Guangzhou Warehouse
+                    {fromLocationId === defaultWarehouse.id && (
+                      <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    )}
+                  </div>
+                )}
+                {otherLocations.map((l) => (
+                  <div
+                    key={l.id}
+                    onClick={() => { setFromLocationId(l.id); if (toLocationId === l.id) setToLocationId(''); setFromDropdownOpen(false); }}
+                    className={`px-4 py-2.5 text-sm cursor-pointer flex items-center justify-between hover:bg-gray-50 ${fromLocationId === l.id ? 'bg-amber-50 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    {l.name} <span className="text-gray-400 text-xs capitalize">({td(l.type)})</span>
+                    {fromLocationId === l.id && (
+                      <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
-            {otherLocations.map((l) => (
-              <option key={l.id} value={l.id}>{l.name} ({td(l.type)})</option>
-            ))}
-          </select>
-          {fromLocation && (
-            <p className="mt-2 text-xs text-gray-500">
-              {fromLocation.name === 'Guangzhou Warehouse' ? (
-                <span className="text-amber-700 font-medium">{t('defaultLocation')}</span>
-              ) : (
-                <>{t('type')}: <span className="capitalize font-medium">{td(fromLocation.type)}</span></>
-              )}
-            </p>
-          )}
-        </div>
+          </div>
 
-        {/* Stock In To */}
-        <div className="bg-white rounded-[1.2rem] shadow p-5 border-l-4 border-green-500">
-          <div className="flex items-center gap-2 mb-3">
-            <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            <h2 className="font-semibold text-gray-800">{t('stockInTo')}</h2>
-          </div>
-          <select
-            value={toLocationId}
-            onChange={(e) => setToLocationId(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-[1.2rem] focus:outline-none text-sm"
+          {/* Swap Button */}
+          <button
+            onClick={() => { if (cart.length > 0) return; setFromLocationId(toLocationId); setToLocationId(fromLocationId); }}
+            className={`flex-shrink-0 w-10 h-10 text-white rounded-full flex items-center justify-center transition-colors self-end mb-[2px] ${cart.length > 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-700'}`}
+            title={cart.length > 0 ? 'Clear cart to change locations' : 'Swap locations'}
           >
-            <option value="">{t('selectDestinationLocation')}</option>
-            {defaultWarehouse && defaultWarehouse.id !== fromLocationId && (
-              <option key={defaultWarehouse.id} value={defaultWarehouse.id}>
-                Guangzhou Warehouse
-              </option>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+            </svg>
+          </button>
+
+          {/* Stock In To */}
+          <div className="flex-1 relative" ref={toDropdownRef}>
+            <h2 className="font-bold text-gray-800 mb-2">{t('stockInTo')}</h2>
+            <button
+              onClick={() => { if (cart.length > 0) return; setToDropdownOpen(!toDropdownOpen); setFromDropdownOpen(false); }}
+              className={`w-full px-4 py-3 rounded-full text-sm text-left flex items-center justify-between transition-colors ${cart.length > 0 ? 'bg-[#800020]/60 cursor-not-allowed' : 'bg-[#800020] hover:bg-[#6b001a]'}`}
+            >
+              <span className={toLocation ? 'text-white font-medium' : 'text-white/60'}>
+                {toLocation ? toLocation.name : t('selectDestinationLocation')}
+              </span>
+              <svg className={`w-4 h-4 text-white/70 transition-transform ${toDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {toDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 z-50 overflow-hidden">
+                {defaultWarehouse && defaultWarehouse.id !== fromLocationId && (
+                  <div
+                    onClick={() => { setToLocationId(defaultWarehouse.id); setToDropdownOpen(false); }}
+                    className={`px-4 py-2.5 text-sm cursor-pointer flex items-center justify-between hover:bg-gray-50 ${toLocationId === defaultWarehouse.id ? 'bg-amber-50 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    Guangzhou Warehouse
+                    {toLocationId === defaultWarehouse.id && (
+                      <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    )}
+                  </div>
+                )}
+                {otherLocations.filter((l) => l.id !== fromLocationId).map((l) => (
+                  <div
+                    key={l.id}
+                    onClick={() => { setToLocationId(l.id); setToDropdownOpen(false); }}
+                    className={`px-4 py-2.5 text-sm cursor-pointer flex items-center justify-between hover:bg-gray-50 ${toLocationId === l.id ? 'bg-amber-50 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    {l.name} <span className="text-gray-400 text-xs capitalize">({td(l.type)})</span>
+                    {toLocationId === l.id && (
+                      <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
-            {otherLocations.filter((l) => l.id !== fromLocationId).map((l) => (
-              <option key={l.id} value={l.id}>{l.name} ({td(l.type)})</option>
-            ))}
-          </select>
-          {toLocation && (
-            <p className="mt-2 text-xs text-gray-500">
-              {toLocation.name === 'Guangzhou Warehouse' ? (
-                <span className="text-amber-700 font-medium">{t('defaultLocation')}</span>
-              ) : (
-                <>{t('type')}: <span className="capitalize font-medium">{td(toLocation.type)}</span></>
-              )}
-            </p>
-          )}
+          </div>
         </div>
       </div>
 
       {/* Transfer Cart — Inventory Table Style */}
-      <div className="bg-white rounded-[1.2rem] shadow mb-6">
+      <div className="mb-6">
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -539,77 +624,73 @@ export default function TransfersPage() {
           </div>
         ) : (
           <div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('image')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('product')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('barcode')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('weight')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('available')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('transferQty')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('transferLocation')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('status')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('actions')}</th>
+            <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+              <table className="min-w-full border-separate border-spacing-0">
+                <thead>
+                  <tr className="bg-gray-50/80">
+                    <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('image')}</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('product')}</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('barcode')}</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('weight')}</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('available')}</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('transferQty')}</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('transferLocation')}</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('status')}</th>
+                    <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('actions')}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody>
                   {cart.map((item) => {
                     const stock = getStock(item.product_id, fromLocationId);
                     const overStock = item.quantity > stock;
                     return (
-                      <tr key={item.product_id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
+                      <tr key={item.product_id} className="transition-colors hover:bg-amber-50/60">
+                        <td className="px-5 py-4 border-b border-gray-100">
                           {item.product_image ? (
-                            <img src={getImageUrl(item.product_image)} alt={item.product_name} className="w-10 h-10 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setPreviewImage(getImageUrl(item.product_image))} />
+                            <img src={getImageUrl(item.product_image)} alt={item.product_name} className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setPreviewImage(getImageUrl(item.product_image))} />
                           ) : (
-                            <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">
                               N/A
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-sm font-bold text-gray-800">{item.product_name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600 font-mono">{item.product_barcode || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{item.product_weight || '-'}</td>
-                        <td className="px-4 py-3 text-sm font-bold">{stock}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{item.product_name}</td>
+                        <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{item.product_barcode || '-'}</td>
+                        <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{item.product_weight || '-'}</td>
+                        <td className="px-5 py-4 border-b border-gray-100 text-sm font-semibold text-gray-800">{stock}</td>
+                        <td className="px-5 py-4 border-b border-gray-100">
                           <div className="flex items-center gap-1">
                             <button
                               onClick={() => updateCartQty(item.product_id, item.quantity - 1)}
-                              className="w-8 h-8 rounded-[1.2rem] bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-medium transition-colors"
-                            >
-                              -
-                            </button>
+                              className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-medium transition-colors"
+                            >-</button>
                             <input
                               type="number"
                               min="1"
                               value={item.quantity}
                               onChange={(e) => updateCartQty(item.product_id, parseInt(e.target.value) || 1)}
-                              className={`w-14 text-center py-1 border rounded-[1.2rem] text-sm font-medium ${
+                              className={`w-14 text-center py-1 border rounded-full text-sm font-medium ${
                                 overStock ? 'border-red-300 text-red-600 bg-red-50' : 'border-gray-300'
                               }`}
                             />
                             <button
                               onClick={() => updateCartQty(item.product_id, item.quantity + 1)}
-                              className="w-8 h-8 rounded-[1.2rem] bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-medium transition-colors"
-                            >
-                              +
-                            </button>
+                              className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 font-medium transition-colors"
+                            >+</button>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm font-bold text-amber-800">{toLocation?.name || '-'}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                            overStock ? 'bg-red-100 text-red-800' :
-                            stock === 0 ? 'bg-red-100 text-red-800' :
-                            stock <= 5 ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-green-100 text-green-800'
+                        <td className="px-5 py-4 border-b border-gray-100 text-sm font-semibold text-amber-800">{toLocation?.name || '-'}</td>
+                        <td className="px-5 py-4 border-b border-gray-100">
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
+                            overStock ? 'bg-red-50 text-red-700' :
+                            stock === 0 ? 'bg-red-50 text-red-700' :
+                            stock <= 5 ? 'bg-yellow-50 text-yellow-700' :
+                            'bg-green-50 text-green-700'
                           }`}>
                             {overStock ? t('overStock') : stock === 0 ? t('outOfStockLabel') : stock <= 5 ? t('lowStockLabel') : t('inStock')}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-5 py-4 border-b border-gray-100">
                           <button
                             onClick={() => removeFromCart(item.product_id)}
                             className="text-red-400 hover:text-red-600 transition-colors p-1"
@@ -664,27 +745,65 @@ export default function TransfersPage() {
 
       {/* Add Item Modal (manual select) */}
       {addingProduct && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setAddingProduct(false)}>
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-bold mb-4">{t('addItemToCart')}</h2>
             <div className="space-y-4">
-              <div>
+              <div className="relative" ref={productDropdownRef}>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
-                <select
-                  value={addForm.product_id}
-                  onChange={(e) => setAddForm({ ...addForm, product_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
+                <button
+                  onClick={() => { setProductDropdownOpen(!productDropdownOpen); setProductSearch(''); }}
+                  className="w-full px-4 py-2.5 bg-gray-100 rounded-full text-sm text-left flex items-center justify-between hover:bg-gray-200 transition-colors"
                 >
-                  <option value="">{t('selectProduct')}</option>
-                  {products.map((p) => {
-                    const stock = getStock(p.id, fromLocationId);
-                    return (
-                      <option key={p.id} value={p.id} disabled={stock === 0}>
-                        {p.name} {p.barcode ? `(${p.barcode})` : ''} — Stock: {stock}
-                      </option>
-                    );
-                  })}
-                </select>
+                  <span className={addForm.product_id ? 'text-gray-800 truncate' : 'text-gray-400'}>
+                    {addForm.product_id ? (products.find(p => p.id === addForm.product_id)?.name || t('selectProduct')) : t('selectProduct')}
+                  </span>
+                  <svg className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform ${productDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {productDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 z-50 overflow-hidden">
+                    <div className="p-2 border-b border-gray-100">
+                      <input
+                        type="text"
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        placeholder={t('searchProducts') || 'Search products...'}
+                        className="w-full px-3 py-2 bg-gray-50 rounded-full text-sm focus:outline-none"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-52 overflow-y-auto">
+                      {products
+                        .filter((p) => {
+                          if (getStock(p.id, fromLocationId) <= 0) return false;
+                          const q = productSearch.toLowerCase();
+                          return !q || p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.toLowerCase().includes(q));
+                        })
+                        .map((p) => {
+                          const stock = getStock(p.id, fromLocationId);
+                          return (
+                            <div
+                              key={p.id}
+                              onClick={() => { if (stock > 0) { setAddForm({ ...addForm, product_id: p.id }); setProductDropdownOpen(false); } }}
+                              className={`px-4 py-2.5 text-sm cursor-pointer flex items-center justify-between hover:bg-gray-50 ${addForm.product_id === p.id ? 'bg-amber-50 text-amber-800 font-medium' : stock === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-700'}`}
+                            >
+                              <div className="truncate mr-2">
+                                {p.name} {p.barcode ? <span className="text-gray-400 text-xs">({p.barcode})</span> : ''}
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className={`text-xs ${stock > 0 ? 'text-green-600' : 'text-red-400'}`}>Stock: {stock}</span>
+                                {addForm.product_id === p.id && (
+                                  <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('quantity')}</label>
@@ -953,6 +1072,40 @@ export default function TransfersPage() {
         </div>
       )}
 
+      {/* Insufficient Stock Popup */}
+      {showInsufficientStock && insufficientProduct && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowInsufficientStock(false)}>
+          <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm text-center" onClick={(e) => e.stopPropagation()}>
+            <div className="w-16 h-16 rounded-full bg-amber-100 mx-auto mb-4 flex items-center justify-center">
+              <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">No Stock</h2>
+            <p className="text-gray-500 text-sm mb-1">
+              <span className="font-semibold text-gray-700">{insufficientProduct.name}</span>
+            </p>
+            <p className="text-gray-500 text-sm mb-6">
+              has <span className="font-semibold text-red-600">no stock</span> at <span className="font-semibold">{fromLocation?.name || 'source'}</span>
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowInsufficientStock(false); navigate('/inventorymanagement/inventory'); }}
+                className="flex-1 py-2.5 bg-[#800020] text-white rounded-full hover:bg-[#6b001a] font-medium transition-colors"
+              >
+                Go to Inventory
+              </button>
+              <button
+                onClick={() => setShowInsufficientStock(false)}
+                className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 font-medium transition-colors"
+              >
+                {t('cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Product Form Modal (same as ProductsPage) */}
       {showProductForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -1146,7 +1299,7 @@ export default function TransfersPage() {
       )}
 
       {/* Transfer History */}
-      <div className="bg-white rounded-[1.2rem] shadow p-6">
+      <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">{t('recentTransfers')}</h2>
           <button
@@ -1156,52 +1309,52 @@ export default function TransfersPage() {
             {t('transferRecords')}
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('image')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('product')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('barcode')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('stockOut')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('stockInLabel')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('transferredQty')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('date')}</th>
+        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+          <table className="min-w-full border-separate border-spacing-0">
+            <thead>
+              <tr className="bg-gray-50/80">
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('image')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('product')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('barcode')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('stockOut')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('stockInLabel')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('transferredQty')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('date')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {transfers.map((tx) => (
-                <tr key={tx.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
+                <tr key={tx.id} className="transition-colors hover:bg-amber-50/60">
+                  <td className="px-5 py-4 border-b border-gray-100">
                     {tx.product?.image_url ? (
-                      <img src={getImageUrl(tx.product.image_url)} alt={tx.product.name} className="w-10 h-10 rounded object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setPreviewImage(getImageUrl(tx.product.image_url))} />
+                      <img src={getImageUrl(tx.product.image_url)} alt={tx.product.name} className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setPreviewImage(getImageUrl(tx.product.image_url))} />
                     ) : (
-                      <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">N/A</div>
+                      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">N/A</div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm font-bold text-gray-800">{tx.product?.name || '-'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 font-mono">{tx.product?.barcode || '-'}</td>
-                  <td className="px-4 py-3 text-sm">
-                    <span className="inline-flex items-center gap-1 text-red-600">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" /></svg>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{tx.product?.name || '-'}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{tx.product?.barcode || '-'}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm">
+                    <span className="inline-flex items-center gap-1.5 text-red-600">
+                      <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" /></svg>
                       {tx.fromLocation?.name || '-'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm">
-                    <span className="inline-flex items-center gap-1 text-green-600">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" /></svg>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm">
+                    <span className="inline-flex items-center gap-1.5 text-green-600">
+                      <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" /></svg>
                       {tx.toLocation?.name || '-'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm font-semibold">{tx.quantity}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {new Date(tx.createdAt).toLocaleDateString()}
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm font-semibold text-gray-800">{tx.quantity}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-400">
+                    {new Date(tx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>
                 </tr>
               ))}
               {transfers.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">{t('noTransfersYet')}</td>
+                  <td colSpan={7} className="px-5 py-12 text-center text-gray-400">{t('noTransfersYet')}</td>
                 </tr>
               )}
             </tbody>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
 import { inventoryApi, locationsApi, productsApi, getImageUrl } from '../utils/inventoryApi';
 import { useLanguage } from '../context/LanguageContext';
@@ -15,6 +15,8 @@ export default function InventoryPage() {
   const [stockForm, setStockForm] = useState({ product_id: '', location_id: '', quantity: '' });
   const [editingInv, setEditingInv] = useState(null);
   const [editQty, setEditQty] = useState(1);
+  const [locDropdownOpen, setLocDropdownOpen] = useState(false);
+  const locDropdownRef = useRef(null);
 
   const fetchData = async () => {
     try {
@@ -43,7 +45,20 @@ export default function InventoryPage() {
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
   }, [selectedLocation]);
+
+  // Close location dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (locDropdownRef.current && !locDropdownRef.current.contains(e.target)) {
+        setLocDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleStockIn = async (e) => {
     e.preventDefault();
@@ -99,29 +114,63 @@ export default function InventoryPage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">{t('inventory')}</h1>
-        <button
-          onClick={openStockIn}
-          className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
-        >
-          {t('stockIn')}
-        </button>
-      </div>
-
-      {/* Location Filter */}
-      <div className="mb-4">
-        <select
-          value={selectedLocation}
-          onChange={(e) => setSelectedLocation(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
-        >
-          <option value="">{t('allLocations')}</option>
-          {locations.filter((loc) => loc.name === 'Guangzhou Warehouse').map((loc) => (
-            <option key={loc.id} value={loc.id}>Guangzhou Warehouse</option>
-          ))}
-          {locations.filter((loc) => loc.name !== 'Guangzhou Warehouse').map((loc) => (
-            <option key={loc.id} value={loc.id}>{loc.name} ({td(loc.type)})</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-3">
+          {/* Custom Location Dropdown */}
+          <div className="relative" ref={locDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setLocDropdownOpen(!locDropdownOpen)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-[1.2rem] bg-white hover:bg-gray-50 focus:outline-none min-w-[180px] text-left"
+            >
+              <span className="flex-1 truncate text-sm text-gray-800">
+                {selectedLocation
+                  ? (() => {
+                      const loc = locations.find((l) => String(l.id) === String(selectedLocation));
+                      if (!loc) return t('allLocations');
+                      return loc.name === 'Guangzhou Warehouse' ? 'Guangzhou Warehouse' : `${loc.name} (${td(loc.type)})`;
+                    })()
+                  : t('allLocations')}
+              </span>
+              <svg className={`w-4 h-4 text-gray-500 transition-transform ${locDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {locDropdownOpen && (
+              <div className="absolute right-0 mt-1 w-full min-w-[220px] bg-white border border-gray-200 rounded-[1rem] shadow-lg z-50 py-1 max-h-60 overflow-y-auto">
+                <div
+                  onClick={() => { setSelectedLocation(''); setLocDropdownOpen(false); }}
+                  className={`px-4 py-2 text-sm cursor-pointer hover:bg-amber-50 ${selectedLocation === '' ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                >
+                  {t('allLocations')}
+                </div>
+                {locations.filter((loc) => loc.name === 'Guangzhou Warehouse').map((loc) => (
+                  <div
+                    key={loc.id}
+                    onClick={() => { setSelectedLocation(loc.id); setLocDropdownOpen(false); }}
+                    className={`px-4 py-2 text-sm cursor-pointer hover:bg-amber-50 ${String(selectedLocation) === String(loc.id) ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    Guangzhou Warehouse
+                  </div>
+                ))}
+                {locations.filter((loc) => loc.name !== 'Guangzhou Warehouse').map((loc) => (
+                  <div
+                    key={loc.id}
+                    onClick={() => { setSelectedLocation(loc.id); setLocDropdownOpen(false); }}
+                    className={`px-4 py-2 text-sm cursor-pointer hover:bg-amber-50 ${String(selectedLocation) === String(loc.id) ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    {loc.name} ({td(loc.type)})
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={openStockIn}
+            className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
+          >
+            {t('stockIn')}
+          </button>
+        </div>
       </div>
 
       {/* Stock In Modal */}
@@ -191,45 +240,45 @@ export default function InventoryPage() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-700"></div>
         </div>
       ) : (
-        <div className="overflow-x-auto bg-white rounded-[1.2rem] shadow">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('image')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('product')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('barcode')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('location')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('quantity')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('status')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('actions')}</th>
+        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+          <table className="min-w-full border-separate border-spacing-0">
+            <thead>
+              <tr className="bg-gray-50/80">
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('image')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('product')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('barcode')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('location')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('quantity')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('status')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {inventory.map((inv) => (
-                <tr key={inv.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
+                <tr key={inv.id} className="transition-colors hover:bg-amber-50/60">
+                  <td className="px-5 py-4 border-b border-gray-100">
                     {inv.product?.image_url ? (
-                      <img src={getImageUrl(inv.product.image_url)} alt={inv.product.name} className="w-10 h-10 rounded object-cover" />
+                      <img src={getImageUrl(inv.product.image_url)} alt={inv.product.name} className="w-10 h-10 rounded-lg object-cover" />
                     ) : (
-                      <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">
                         N/A
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-800">{inv.product?.name || '-'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{inv.product?.barcode || '-'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{inv.location?.name || '-'}</td>
-                  <td className="px-4 py-3 text-sm font-bold">{inv.quantity}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                      inv.quantity === 0 ? 'bg-red-100 text-red-800' :
-                      inv.quantity <= 5 ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-green-100 text-green-800'
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{inv.product?.name || '-'}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{inv.product?.barcode || '-'}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{inv.location?.name || '-'}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm font-semibold text-gray-800">{inv.quantity}</td>
+                  <td className="px-5 py-4 border-b border-gray-100">
+                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
+                      inv.quantity === 0 ? 'bg-red-50 text-red-700' :
+                      inv.quantity <= 5 ? 'bg-yellow-50 text-yellow-700' :
+                      'bg-green-50 text-green-700'
                     }`}>
                       {inv.quantity === 0 ? t('outOfStockLabel') : inv.quantity <= 5 ? t('lowStockLabel') : t('inStock')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm">
                     <button
                       onClick={() => { setEditingInv(inv); setEditQty(inv.quantity); }}
                       className="text-blue-600 hover:text-blue-800 font-medium"
@@ -241,7 +290,7 @@ export default function InventoryPage() {
               ))}
               {inventory.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-5 py-12 text-center text-gray-400">
                     {t('noInventoryRecords')}
                   </td>
                 </tr>

@@ -10,10 +10,15 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    reportsApi.getSummary(api)
-      .then((res) => setSummary(res.data.data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    const fetchSummary = () => {
+      reportsApi.getSummary(api)
+        .then((res) => setSummary(res.data.data))
+        .catch(console.error)
+        .finally(() => setLoading(false));
+    };
+    fetchSummary();
+    const interval = setInterval(fetchSummary, 30000);
+    return () => clearInterval(interval);
   }, [api]);
 
   if (loading) {
@@ -53,38 +58,45 @@ export default function Dashboard() {
       </div>
 
       {/* Recent Transactions */}
-      <div className="bg-white rounded-[1.2rem] shadow p-6">
+      <div>
         <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('recentTransactionsTitle')}</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+          <table className="min-w-full border-separate border-spacing-0">
             <thead>
-              <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('type')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('product')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('from')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('to')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('qty')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('date')}</th>
+              <tr className="bg-gray-50/80">
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('type')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('product')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('from')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('to')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">Sold</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('qty')}</th>
+                <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('date')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody>
               {(summary?.recentTransactions || []).map((tx) => (
-                <tr key={tx.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                      tx.type === 'sale' ? 'bg-green-100 text-green-800' :
-                      tx.type === 'transfer' ? 'bg-blue-100 text-blue-800' :
-                      'bg-amber-100 text-amber-800'
+                <tr
+                  key={tx.id}
+                  className={`transition-colors hover:bg-amber-50/60 ${
+                    tx.type === 'sale' ? 'bg-[#800020]/[0.03]' : ''
+                  }`}
+                >
+                  <td className="px-5 py-4 border-b border-gray-100">
+                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
+                      tx.type === 'sale' ? 'bg-[#800020] text-white' :
+                      tx.type === 'transfer' ? 'bg-blue-50 text-blue-700' :
+                      'bg-amber-50 text-amber-700'
                     }`}>
                       {tx.type === 'stock_in' ? t('stockInLabel') : tx.type === 'transfer' ? t('transfer') : t('sale')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm">{tx.product?.name || '-'}</td>
-                  <td className="px-4 py-3 text-sm">{tx.fromLocation?.name || '-'}</td>
-                  <td className="px-4 py-3 text-sm">{tx.toLocation?.name || '-'}</td>
-                  <td className="px-4 py-3 text-sm font-medium">{tx.quantity}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {new Date(tx.createdAt).toLocaleString()}
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{tx.product?.name || '-'}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{tx.fromLocation?.name || '-'}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{tx.toLocation?.name || '-'}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm font-semibold text-gray-800">{tx.unit_price ? `¥${parseFloat(tx.unit_price).toFixed(2)}` : '-'}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm font-semibold text-gray-800">{tx.quantity}</td>
+                  <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-400">
+                    {new Date(tx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>
                 </tr>
               ))}

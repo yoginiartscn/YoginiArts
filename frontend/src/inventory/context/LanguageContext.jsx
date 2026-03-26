@@ -155,7 +155,6 @@ const translations = {
 
     // Sales Page
     pointOfSale: 'Point of Sale',
-    selectProduct: 'Select Product',
     scanEnterBarcode: 'Scan / Enter Barcode',
     scanOrType: 'Scan barcode or type and press Enter',
     or: 'or',
@@ -163,6 +162,23 @@ const translations = {
     priceType: 'Price Type',
     total: 'Total',
     completeSale: 'Complete Sale',
+    orderSummary: 'Order Summary',
+    subtotal: 'Subtotal',
+    qty: 'Qty',
+    unitPrice: 'Unit Price',
+    clearCart: 'Clear Cart',
+    confirmPayment: 'Confirm Payment',
+    emptyCart: 'Cart is empty',
+    scanToAdd: 'Scan a barcode or select a product to add items',
+    itemAdded: 'Item added to cart',
+    items: 'items',
+    manualSale: 'Manual Sale',
+    searchProducts: 'Search products...',
+    scanBarcodeDesc: 'Use USB/Bluetooth barcode scanner to add products',
+    manualSaleDesc: 'Search and select products manually',
+    productName: 'Product Name',
+    remove: 'Remove',
+    salesFrom: 'Sales From',
 
     // Locations Page
     addLocation: '+ Add Location',
@@ -359,7 +375,6 @@ const translations = {
 
     // Sales Page
     pointOfSale: '销售点',
-    selectProduct: '选择产品',
     scanEnterBarcode: '扫描 / 输入条码',
     scanOrType: '扫描条码或输入后按回车',
     or: '或',
@@ -367,6 +382,23 @@ const translations = {
     priceType: '价格类型',
     total: '总计',
     completeSale: '完成销售',
+    orderSummary: '订单摘要',
+    subtotal: '小计',
+    qty: '数量',
+    unitPrice: '单价',
+    clearCart: '清空购物车',
+    confirmPayment: '确认付款',
+    emptyCart: '购物车为空',
+    scanToAdd: '扫描条码或选择产品以添加商品',
+    itemAdded: '已添加到购物车',
+    items: '件商品',
+    manualSale: '手动销售',
+    searchProducts: '搜索产品...',
+    scanBarcodeDesc: '使用USB/蓝牙条码扫描器添加产品',
+    manualSaleDesc: '手动搜索和选择产品',
+    productName: '产品名称',
+    remove: '移除',
+    salesFrom: '销售地点',
 
     // Locations Page
     addLocation: '+ 添加位置',

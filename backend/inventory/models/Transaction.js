@@ -47,6 +47,15 @@ const Transaction = sequelize
     }, {
       tableName: 'transactions',
       timestamps: true,
+      indexes: [
+        { fields: ['type'] },
+        { fields: ['product_id'] },
+        { fields: ['from_location_id'] },
+        { fields: ['to_location_id'] },
+        { fields: ['created_by'] },
+        { fields: ['createdAt'] },
+        { fields: ['type', 'createdAt'] },
+      ],
     })
   : null;
 

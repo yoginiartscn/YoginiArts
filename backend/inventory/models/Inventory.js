@@ -29,6 +29,8 @@ const Inventory = sequelize
           unique: true,
           fields: ['product_id', 'location_id'],
         },
+        { fields: ['quantity'] },
+        { fields: ['location_id'] },
       ],
     })
   : null;
