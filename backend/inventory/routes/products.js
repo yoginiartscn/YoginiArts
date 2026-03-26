@@ -2,29 +2,16 @@ const express = require('express');
 const { Op } = require('sequelize');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const { Product, Location, Inventory } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const cache = require('../cache');
+const { uploadImage, deleteImage } = require('../../config/supabase');
 
 const router = express.Router();
 
-// Multer config for product images
-const uploadsDir = path.join(__dirname, '..', '..', 'uploads', 'products');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  },
-});
-
+// Multer config — memory storage so we can forward the buffer to Supabase
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     const allowed = /jpeg|jpg|png|gif|webp/;
@@ -83,10 +70,10 @@ router.post('/', authenticate, upload.single('image'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Product name is required' });
     }
 
-    // Use uploaded file path, or provided URL (ignore ephemeral blob: URLs)
+    // Use uploaded file (→ Supabase), or provided URL (ignore ephemeral blob: URLs)
     let finalImageUrl = (image_url && !image_url.startsWith('blob:')) ? image_url : null;
     if (req.file) {
-      finalImageUrl = `/uploads/products/${req.file.filename}`;
+      finalImageUrl = await uploadImage(req.file.buffer, req.file.originalname);
     }
 
     const product = await Product.create({
@@ -163,14 +150,13 @@ router.put('/:id', authenticate, upload.single('image'), async (req, res) => {
 
     const { name, description, image_url, barcode, cost_price, retail_price, wholesale_price, category, weight, size } = req.body;
 
-    // Use uploaded file, or provided URL, or keep existing (ignore ephemeral blob: URLs)
-    let finalImageUrl = image_url !== undefined ? (image_url.startsWith('blob:') ? product.image_url : image_url) : product.image_url;
+    // Use uploaded file (→ Supabase), or provided URL, or keep existing (ignore ephemeral blob: URLs)
+    let finalImageUrl = image_url !== undefined ? ((image_url && image_url.startsWith('blob:')) ? product.image_url : image_url) : product.image_url;
     if (req.file) {
-      finalImageUrl = `/uploads/products/${req.file.filename}`;
-      // Delete old uploaded image if it was a local file
-      if (product.image_url && product.image_url.startsWith('/uploads/')) {
-        const oldPath = path.join(__dirname, '..', '..', product.image_url);
-        fs.unlink(oldPath, () => {}); // ignore errors
+      finalImageUrl = await uploadImage(req.file.buffer, req.file.originalname);
+      // Delete old image from Supabase Storage
+      if (product.image_url) {
+        deleteImage(product.image_url).catch(() => {}); // fire-and-forget
       }
     }
 
@@ -206,10 +192,9 @@ router.delete('/:id', authenticate, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    // Delete uploaded image file if local
-    if (product.image_url && product.image_url.startsWith('/uploads/')) {
-      const imgPath = path.join(__dirname, '..', '..', product.image_url);
-      fs.unlink(imgPath, () => {});
+    // Delete image from Supabase Storage
+    if (product.image_url) {
+      deleteImage(product.image_url).catch(() => {});
     }
 
     await product.destroy();

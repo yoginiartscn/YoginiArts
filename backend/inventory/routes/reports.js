@@ -2,14 +2,125 @@ const express = require('express');
 const { Op } = require('sequelize');
 const ExcelJS = require('exceljs');
 const { imageSize } = require('image-size');
+const fs = require('fs');
+const path = require('path');
 const { Transaction, Product, Location, User, Inventory } = require('../models');
 const { authenticate } = require('../middleware/auth');
+const { downloadImage } = require('../../config/supabase');
 
 const cache = require('../cache');
 
 const router = express.Router();
 
-// GET /transactions - list transactions with filters
+// ─── Shared Excel constants ────────────────────────────────────────────────────
+// In production the built dist/ folder has the templates; in dev use frontend/public
+const TEMPLATES_DIR_PROD = path.join(__dirname, '..', '..', '..', 'dist', 'Excels Templates');
+const TEMPLATES_DIR_DEV = path.join(__dirname, '..', '..', '..', 'frontend', 'public', 'Excels Templates');
+const TEMPLATES_DIR = fs.existsSync(TEMPLATES_DIR_DEV) ? TEMPLATES_DIR_DEV : TEMPLATES_DIR_PROD;
+const IMG_FIT = 150;        // px — larger dimension scaled to this
+const IMG_COL_WIDTH = 22;   // Excel column width (chars) for image column
+
+const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF720E20' } };
+const headerFont = { size: 13, color: { theme: 0 }, name: 'Arial', bold: true };
+const headerAlign = { horizontal: 'center', vertical: 'middle', wrapText: true };
+const dataFont = { size: 11, name: 'Arial' };
+const dataAlign = { horizontal: 'center', vertical: 'middle', wrapText: true };
+const thinBorder = {
+  top: { style: 'thin' },
+  left: { style: 'thin' },
+  bottom: { style: 'thin' },
+  right: { style: 'thin' },
+};
+
+// ─── embedImage helper ─────────────────────────────────────────────────────────
+async function embedImage(workbook, sheet, imageUrl, col, rowIndex) {
+  if (!imageUrl) return { hasImage: false, imgHeight: 0 };
+  try {
+    const imgBuffer = await downloadImage(imageUrl);
+    if (!imgBuffer) return { hasImage: false, imgHeight: 0 };
+    const ext = path.extname(imageUrl.split('?')[0]).replace('.', '').toLowerCase() || 'jpeg';
+    const dimensions = imageSize(imgBuffer);
+    let w, h;
+    if (dimensions.height >= dimensions.width) {
+      h = IMG_FIT;
+      w = Math.round((dimensions.width / dimensions.height) * IMG_FIT);
+    } else {
+      w = IMG_FIT;
+      h = Math.round((dimensions.height / dimensions.width) * IMG_FIT);
+    }
+    const imgId = workbook.addImage({
+      buffer: imgBuffer,
+      extension: ext === 'jpg' ? 'jpeg' : ext,
+    });
+    const c = Math.floor(col);
+    const cellWidthPx = IMG_COL_WIDTH * 7.5;
+    const cellHeightPx = IMG_FIT + 10;
+    const padX = Math.max(0, (cellWidthPx - w) / 2);
+    const padY = Math.max(0, (cellHeightPx - h) / 2);
+    sheet.addImage(imgId, {
+      tl: { col: c + padX / cellWidthPx, row: rowIndex + padY / cellHeightPx },
+      ext: { width: w, height: h },
+    });
+    const rowHeightPts = Math.round(cellHeightPx / 1.33);
+    return { hasImage: true, imgHeight: rowHeightPts };
+  } catch {
+    return { hasImage: false, imgHeight: 0 };
+  }
+}
+
+// ─── loadTemplate: load xlsx template, clear data rows, set headers ────────────
+async function loadTemplate(templateFile, sheetName, headers, colWidths) {
+  const workbook = new ExcelJS.Workbook();
+  const templatePath = path.join(TEMPLATES_DIR, templateFile);
+  const hasTemplate = fs.existsSync(templatePath);
+
+  if (hasTemplate) {
+    await workbook.xlsx.readFile(templatePath);
+  }
+
+  let sheet = workbook.getWorksheet(1);
+  if (!sheet) sheet = workbook.addWorksheet(sheetName);
+
+  // Clear data rows (row 4+)
+  for (let r = 4; r <= sheet.rowCount; r++) {
+    const row = sheet.getRow(r);
+    row.eachCell({ includeEmpty: true }, (cell) => { cell.value = null; cell.style = {}; });
+  }
+
+  // If template exists, preserve its header styling (row 3), logo (rows 1-2), and column widths.
+  // Only write headers as fallback when no template is available.
+  if (!hasTemplate) {
+    sheet.mergeCells(1, 1, 2, headers.length);
+    sheet.getRow(1).height = 30;
+    sheet.getRow(2).height = 30;
+
+    const headerRow = sheet.getRow(3);
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h;
+      cell.font = headerFont;
+      cell.fill = headerFill;
+      cell.alignment = headerAlign;
+      cell.border = thinBorder;
+    });
+    headerRow.height = 30;
+
+    colWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+  }
+
+  return { workbook, sheet };
+}
+
+// Helper: set a data cell with font, alignment, border
+function setCell(row, col, value, font, align) {
+  const cell = row.getCell(col);
+  cell.value = value;
+  cell.font = font || dataFont;
+  cell.alignment = align || dataAlign;
+  cell.border = thinBorder;
+}
+
+// ─── GET /transactions ─────────────────────────────────────────────────────────
 router.get('/transactions', authenticate, async (req, res) => {
   try {
     const { type, product_id, location_id, start_date, end_date, page = 1, limit = 50 } = req.query;
@@ -18,7 +129,6 @@ router.get('/transactions', authenticate, async (req, res) => {
     if (txCached) return res.json(txCached);
 
     const where = {};
-
     if (type) where.type = type;
     if (product_id) where.product_id = product_id;
     if (location_id) {
@@ -34,7 +144,6 @@ router.get('/transactions', authenticate, async (req, res) => {
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
-
     const { count, rows } = await Transaction.findAndCountAll({
       where,
       include: [
@@ -66,7 +175,7 @@ router.get('/transactions', authenticate, async (req, res) => {
   }
 });
 
-// GET /summary - dashboard summary
+// ─── GET /summary ──────────────────────────────────────────────────────────────
 router.get('/summary', authenticate, async (req, res) => {
   try {
     const cached = cache.get('summary');
@@ -107,34 +216,15 @@ router.get('/summary', authenticate, async (req, res) => {
   }
 });
 
-// GET /export/quotation - export product quotation using template design
+// ─── GET /export/quotation — Product List using SingingBowlTemplates.xlsx ──────
 router.get('/export/quotation', authenticate, async (req, res) => {
   try {
     const { category, price_type = 'retail_price' } = req.query;
 
-    const path = require('path');
-    const fs = require('fs');
-
-    const workbook = new ExcelJS.Workbook();
-
-    // Style constants matching template
-    const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF720E20' } };
-    const headerFont = { size: 13, color: { theme: 0 }, name: 'Arial', bold: true };
-    const headerAlign = { horizontal: 'center', vertical: 'middle' };
-    const dataFont = { size: 11, name: 'Arial' };
-    const dataAlign = { horizontal: 'center', vertical: 'middle' };
-    const thinBorder = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' },
-    };
-
-    // Price label mapping
     const priceLabels = {
-      cost_price: 'Cost Price',
-      retail_price: 'Retail Price',
-      wholesale_price: 'Wholesale Price',
+      cost_price: 'Cost Price / 成本价',
+      retail_price: 'Retail Price / 零售价',
+      wholesale_price: 'Wholesale Price / 批发价',
     };
 
     const catNameMap = {
@@ -144,130 +234,100 @@ router.get('/export/quotation', authenticate, async (req, res) => {
       'Jewelleries': 'jewelleries',
     };
 
-    // Determine which categories to export
+    const headers = ['Image / 图片', 'Product Name / 产品名称', 'Bar Code / 条形码', 'Weight / 重量', 'Size / 尺寸', `${priceLabels[price_type] || 'Price / 价格'}`];
+    const colWidths = [IMG_COL_WIDTH, 36, 37, 24, 24, 20];
+
     const allCategories = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
     const categoriesToExport = category ? [category] : allCategories;
 
+    // Load template to copy logo and styling from it
+    const templatePath = path.join(TEMPLATES_DIR, 'SingingBowlTemplates.xlsx');
+    let templateWb = null;
+    let logoImgBuffer = null;
+    let logoImgExt = 'png';
+    if (fs.existsSync(templatePath)) {
+      templateWb = new ExcelJS.Workbook();
+      await templateWb.xlsx.readFile(templatePath);
+      const tplSheet = templateWb.getWorksheet(1);
+      if (tplSheet) {
+        const tplImages = tplSheet.getImages();
+        if (tplImages.length > 0) {
+          const imgData = templateWb.getImage(tplImages[0].imageId);
+          logoImgBuffer = imgData.buffer;
+          logoImgExt = imgData.extension;
+        }
+      }
+    }
+
+    // Read template header styling to replicate exactly
+    const tplHeaderFont = templateWb
+      ? templateWb.getWorksheet(1)?.getRow(3)?.getCell(1)?.font || headerFont
+      : headerFont;
+    const tplHeaderFill = templateWb
+      ? templateWb.getWorksheet(1)?.getRow(3)?.getCell(1)?.fill || headerFill
+      : headerFill;
+    const tplHeaderAlign = { horizontal: 'center', vertical: 'middle' };
+
+    const workbook = new ExcelJS.Workbook();
+
     for (const cat of categoriesToExport) {
       const products = await Product.findAll({ where: { category: cat }, order: [['createdAt', 'DESC']] });
-      if (products.length === 0 && category) {
-        // If a specific category was requested but has no products, still create the sheet
-      } else if (products.length === 0) {
-        continue; // Skip empty categories in "all" mode
-      }
+      if (products.length === 0 && !category) continue;
 
       const sheet = workbook.addWorksheet(cat);
       const startRow = 4;
 
-      // Header row
-      const headers = ['Image / 图片', 'Product name / 产品名称', 'Bar code / 条形码 ', 'Weight / 重量', 'Size / 尺寸', `${priceLabels[price_type] || 'Price'} / 价格`];
+      // Copy logo image from template
+      if (logoImgBuffer) {
+        const logoId = workbook.addImage({ buffer: logoImgBuffer, extension: logoImgExt });
+        // Position matching the template: col 2, rows 0-1
+        sheet.addImage(logoId, {
+          tl: { col: 2, row: 0, nativeColOff: 217712, nativeRowOff: 81644 },
+          br: { col: 2, row: 1, nativeColOff: 2496589, nativeRowOff: 424544 },
+        });
+      }
+
+      // Merge rows 1-2 for logo area, matching template row heights
+      sheet.mergeCells(1, 1, 2, headers.length);
+      sheet.getRow(1).height = 44.6;
+      sheet.getRow(2).height = 44.6;
+
+      // Header row — match template styling exactly
       const headerRow = sheet.getRow(3);
       headers.forEach((h, i) => {
         const cell = headerRow.getCell(i + 1);
         cell.value = h;
-        cell.font = headerFont;
-        cell.fill = headerFill;
-        cell.alignment = headerAlign;
-        cell.border = thinBorder;
+        cell.font = tplHeaderFont;
+        cell.fill = tplHeaderFill;
+        cell.alignment = tplHeaderAlign;
       });
       headerRow.height = 30;
 
-      // Column widths
-      sheet.getColumn(1).width = 22;
-      sheet.getColumn(2).width = 36;
-      sheet.getColumn(3).width = 37;
-      sheet.getColumn(4).width = 24;
-      sheet.getColumn(5).width = 24;
-      sheet.getColumn(6).width = 20;
+      // Column widths matching template
+      colWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
-      // Add data rows
+      // Data rows
       for (let idx = 0; idx < products.length; idx++) {
         const p = products[idx];
         const row = sheet.getRow(startRow + idx);
 
-        // Image
-        const imgCell = row.getCell(1);
-        imgCell.value = '';
-        imgCell.font = dataFont;
-        imgCell.alignment = dataAlign;
-        imgCell.border = thinBorder;
+        setCell(row, 1, '');
+        const { hasImage, imgHeight } = await embedImage(workbook, sheet, p.image_url, 0, startRow + idx - 1);
+        row.height = hasImage ? imgHeight : 25;
 
-        let hasImage = false;
-        let imgHeight = 0;
-        if (p.image_url && p.image_url.startsWith('/uploads/')) {
-          const imgPath = path.join(__dirname, '..', '..', p.image_url);
-          if (fs.existsSync(imgPath)) {
-            try {
-              const imgBuffer = fs.readFileSync(imgPath);
-              const ext = path.extname(imgPath).replace('.', '').toLowerCase();
-              const dimensions = imageSize(imgBuffer);
-              let scaledWidth, scaledHeight;
-              if (dimensions.height > dimensions.width) {
-                scaledHeight = 200;
-                scaledWidth = Math.round((dimensions.width / dimensions.height) * 200);
-              } else {
-                scaledWidth = 200;
-                scaledHeight = Math.round((dimensions.height / dimensions.width) * 200);
-              }
-              const imgId = workbook.addImage({
-                buffer: imgBuffer,
-                extension: ext === 'jpg' ? 'jpeg' : ext,
-              });
-              sheet.addImage(imgId, {
-                tl: { col: 0.1, row: startRow + idx - 1 + 0.05 },
-                ext: { width: scaledWidth, height: scaledHeight },
-              });
-              hasImage = true;
-              imgHeight = scaledHeight;
-            } catch (imgErr) { /* skip */ }
-          }
-        }
-        row.height = hasImage ? Math.round(imgHeight * 0.75) + 5 : 25;
+        setCell(row, 2, p.name || '-', { ...dataFont, bold: true });
+        setCell(row, 3, p.barcode || '-');
+        setCell(row, 4, p.weight || '-');
+        setCell(row, 5, p.size || '-');
 
-        // Product name
-        const nameCell = row.getCell(2);
-        nameCell.value = p.name || '-';
-        nameCell.font = { ...dataFont, bold: true };
-        nameCell.alignment = dataAlign;
-        nameCell.border = thinBorder;
-
-        // Barcode
-        const barcodeCell = row.getCell(3);
-        barcodeCell.value = p.barcode || '-';
-        barcodeCell.font = dataFont;
-        barcodeCell.alignment = dataAlign;
-        barcodeCell.border = thinBorder;
-
-        // Weight
-        const weightCell = row.getCell(4);
-        weightCell.value = p.weight || '-';
-        weightCell.font = dataFont;
-        weightCell.alignment = dataAlign;
-        weightCell.border = thinBorder;
-
-        // Size
-        const sizeCell = row.getCell(5);
-        sizeCell.value = p.size || '-';
-        sizeCell.font = dataFont;
-        sizeCell.alignment = dataAlign;
-        sizeCell.border = thinBorder;
-
-        // Price
-        const priceCell = row.getCell(6);
         const priceVal = parseFloat(p[price_type] || 0);
-        priceCell.value = priceVal > 0 ? priceVal.toFixed(2) : '-';
-        priceCell.font = { ...dataFont, bold: true, color: { argb: 'FF720E20' } };
-        priceCell.alignment = dataAlign;
-        priceCell.border = thinBorder;
+        setCell(row, 6, priceVal > 0 ? priceVal.toFixed(2) : '-', { ...dataFont, bold: true, color: { argb: 'FF720E20' } });
       }
     }
 
     const catName = catNameMap[category] || (category || 'all_products').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-    const fileName = `${catName}_PI.xlsx`;
-
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
-
+    res.setHeader('Content-Disposition', `attachment; filename=${catName}_PI.xlsx`);
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
@@ -276,7 +336,7 @@ router.get('/export/quotation', authenticate, async (req, res) => {
   }
 });
 
-// GET /export/transfers - export transfer records using template design
+// ─── GET /export/transfers — using TransferTemplates.xlsx ──────────────────────
 router.get('/export/transfers', authenticate, async (req, res) => {
   try {
     const { location_id } = req.query;
@@ -300,154 +360,38 @@ router.get('/export/transfers', authenticate, async (req, res) => {
       limit: 500,
     });
 
-    const path = require('path');
-    const fs = require('fs');
-    const templatePath = path.join(__dirname, '..', '..', '..', 'frontend', 'public', 'Excels Templates', 'TransferTemplates.xlsx');
+    const headers = ['Image', 'Product Name', 'Bar Code', 'Transferred To', 'Date'];
+    const colWidths = [IMG_COL_WIDTH, 36, 37, 24, 20];
 
-    const workbook = new ExcelJS.Workbook();
+    const { workbook, sheet } = await loadTemplate('TransferTemplates.xlsx', 'Transfer Records', headers, colWidths);
 
-    // Check if template exists, use it as base
-    if (fs.existsSync(templatePath)) {
-      await workbook.xlsx.readFile(templatePath);
-    }
-
-    const sheet = workbook.getWorksheet(1) || workbook.addWorksheet('Transfer Records');
-
-    // If template loaded, it already has header styling. Clear data rows (row 4+)
-    const startRow = 4;
-    for (let r = startRow; r <= sheet.rowCount; r++) {
-      const row = sheet.getRow(r);
-      row.eachCell({ includeEmpty: true }, (cell) => { cell.value = null; });
-    }
-
-    // Update sheet name with location if filtered
     if (location_id) {
       const loc = await Location.findByPk(location_id);
       if (loc) sheet.name = loc.name;
     }
 
-    // Style constants matching template
-    const headerFill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF720E20' },
-    };
-    const headerFont = { size: 13, color: { theme: 0 }, name: 'Arial', bold: true };
-    const headerAlign = { horizontal: 'center', vertical: 'middle' };
-    const dataFont = { size: 11, name: 'Arial' };
-    const dataAlign = { horizontal: 'center', vertical: 'middle' };
-    const thinBorder = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' },
-    };
-
-    // Ensure header row exists with correct styling (in case template is missing)
-    const headerRow = sheet.getRow(3);
-    const headers = ['Image', 'Product name', 'Bar code', 'Transferred to', 'Date'];
-    headers.forEach((h, i) => {
-      const cell = headerRow.getCell(i + 1);
-      if (!cell.value) {
-        cell.value = h;
-        cell.font = headerFont;
-        cell.fill = headerFill;
-        cell.alignment = headerAlign;
-        cell.border = thinBorder;
-      }
-    });
-    headerRow.height = 30;
-
-    // Set column widths
-    sheet.getColumn(1).width = 22;
-    sheet.getColumn(2).width = 36;
-    sheet.getColumn(3).width = 37;
-    sheet.getColumn(4).width = 21;
-    sheet.getColumn(5).width = 20;
-
-    // Add data rows with embedded product images
+    const startRow = 4;
     for (let idx = 0; idx < transfers.length; idx++) {
       const tx = transfers[idx];
       const row = sheet.getRow(startRow + idx);
 
-      // Image column — embed actual image if it's a local upload
-      const imgCell = row.getCell(1);
-      imgCell.value = '';
-      imgCell.font = dataFont;
-      imgCell.alignment = dataAlign;
-      imgCell.border = thinBorder;
+      setCell(row, 1, '');
+      const { hasImage, imgHeight } = await embedImage(workbook, sheet, tx.product?.image_url, 0, startRow + idx - 1);
+      row.height = hasImage ? imgHeight : 25;
 
-      let hasImage = false;
-      let imgHeight = 0;
-      const imageUrl = tx.product?.image_url;
-      if (imageUrl && imageUrl.startsWith('/uploads/')) {
-        const imgPath = path.join(__dirname, '..', '..', imageUrl);
-        if (fs.existsSync(imgPath)) {
-          try {
-            const imgBuffer = fs.readFileSync(imgPath);
-            const ext = path.extname(imgPath).replace('.', '').toLowerCase();
-            const dimensions = imageSize(imgBuffer);
-            let scaledWidth, scaledHeight;
-            if (dimensions.height > dimensions.width) {
-              scaledHeight = 200;
-              scaledWidth = Math.round((dimensions.width / dimensions.height) * 200);
-            } else {
-              scaledWidth = 200;
-              scaledHeight = Math.round((dimensions.height / dimensions.width) * 200);
-            }
-            const imgId = workbook.addImage({
-              buffer: imgBuffer,
-              extension: ext === 'jpg' ? 'jpeg' : ext,
-            });
-            sheet.addImage(imgId, {
-              tl: { col: 0.1, row: startRow + idx - 1 + 0.05 },
-              ext: { width: scaledWidth, height: scaledHeight },
-            });
-            hasImage = true;
-            imgHeight = scaledHeight;
-          } catch (imgErr) {
-            // Skip image on error
-          }
-        }
-      }
-
-      // Taller row for images, shorter for text-only
-      row.height = hasImage ? Math.round(imgHeight * 0.75) + 5 : 25;
-
-      const nameCell = row.getCell(2);
-      nameCell.value = tx.product?.name || '-';
-      nameCell.font = { ...dataFont, bold: true };
-      nameCell.alignment = dataAlign;
-      nameCell.border = thinBorder;
-
-      const barcodeCell = row.getCell(3);
-      barcodeCell.value = tx.product?.barcode || '-';
-      barcodeCell.font = dataFont;
-      barcodeCell.alignment = dataAlign;
-      barcodeCell.border = thinBorder;
-
-      const locationCell = row.getCell(4);
-      locationCell.value = tx.toLocation?.name || '-';
-      locationCell.font = { ...dataFont, bold: true, color: { argb: 'FF720E20' } };
-      locationCell.alignment = dataAlign;
-      locationCell.border = thinBorder;
-
-      const dateCell = row.getCell(5);
-      dateCell.value = new Date(tx.createdAt).toLocaleDateString();
-      dateCell.font = dataFont;
-      dateCell.alignment = dataAlign;
-      dateCell.border = thinBorder;
+      setCell(row, 2, tx.product?.name || '-', { ...dataFont, bold: true });
+      setCell(row, 3, tx.product?.barcode || '-');
+      setCell(row, 4, tx.toLocation?.name || '-', { ...dataFont, bold: true, color: { argb: 'FF720E20' } });
+      setCell(row, 5, new Date(tx.createdAt).toLocaleDateString());
     }
 
     const locName = location_id
       ? (await Location.findByPk(location_id))?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown'
       : 'All_Locations';
     const dateStr = new Date().toISOString().slice(0, 10);
-    const fileName = `${locName}_${dateStr}_transfer.xlsx`;
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
-
+    res.setHeader('Content-Disposition', `attachment; filename=${locName}_${dateStr}_transfer.xlsx`);
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
@@ -456,7 +400,7 @@ router.get('/export/transfers', authenticate, async (req, res) => {
   }
 });
 
-// GET /export/excel - export products to xlsx
+// ─── GET /export/excel — Product List (plain) ─────────────────────────────────
 router.get('/export/excel', authenticate, async (req, res) => {
   try {
     const { location_id } = req.query;
@@ -476,86 +420,37 @@ router.get('/export/excel', authenticate, async (req, res) => {
       products = products.map((p) => p.toJSON());
     }
 
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Yogini Arts Inventory';
-    const sheet = workbook.addWorksheet('Products');
+    const headers = location_id
+      ? ['Image', 'Product Name', 'Description', 'Barcode', 'Cost Price', 'Retail Price', 'Wholesale Price', 'Quantity']
+      : ['Image', 'Product Name', 'Description', 'Barcode', 'Cost Price', 'Retail Price', 'Wholesale Price'];
+    const colWidths = location_id
+      ? [IMG_COL_WIDTH, 30, 40, 20, 15, 15, 15, 12]
+      : [IMG_COL_WIDTH, 30, 40, 20, 15, 15, 15];
 
-    const columns = [
-      { header: 'Image', key: 'image_url', width: 30 },
-      { header: 'Product Name', key: 'name', width: 30 },
-      { header: 'Description', key: 'description', width: 40 },
-      { header: 'Barcode', key: 'barcode', width: 20 },
-      { header: 'Cost Price', key: 'cost_price', width: 15 },
-      { header: 'Retail Price', key: 'retail_price', width: 15 },
-      { header: 'Wholesale Price', key: 'wholesale_price', width: 15 },
-    ];
+    const { workbook, sheet } = await loadTemplate('SingingBowlTemplates.xlsx', 'Products', headers, colWidths);
 
-    if (location_id) {
-      columns.push({ header: 'Quantity', key: 'quantity', width: 12 });
-    }
+    const startRow = 4;
+    for (let idx = 0; idx < products.length; idx++) {
+      const product = products[idx];
+      const row = sheet.getRow(startRow + idx);
 
-    sheet.columns = columns;
+      setCell(row, 1, '');
+      const { hasImage, imgHeight } = await embedImage(workbook, sheet, product.image_url, 0, startRow + idx - 1);
+      row.height = hasImage ? imgHeight : 25;
 
-    // Style header row
-    sheet.getRow(1).font = { bold: true, size: 12, name: 'Arial' };
-    sheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF7A5D47' },
-    };
-    sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial' };
-
-    const path = require('path');
-    const fs = require('fs');
-
-    products.forEach((product, idx) => {
-      const row = sheet.addRow({
-        image_url: '',
-        name: product.name,
-        description: product.description || '',
-        barcode: product.barcode || '',
-        cost_price: parseFloat(product.cost_price) || 0,
-        retail_price: parseFloat(product.retail_price) || 0,
-        wholesale_price: parseFloat(product.wholesale_price) || 0,
-        quantity: product.quantity,
-      });
-
-      let hasImage = false;
-      let imgHeight = 0;
-      if (product.image_url && product.image_url.startsWith('/uploads/')) {
-        const imgPath = path.join(__dirname, '..', '..', product.image_url);
-        if (fs.existsSync(imgPath)) {
-          try {
-            const imgBuffer = fs.readFileSync(imgPath);
-            const ext = path.extname(imgPath).replace('.', '').toLowerCase();
-            const dimensions = imageSize(imgBuffer);
-            let scaledWidth, scaledHeight;
-            if (dimensions.height > dimensions.width) {
-              scaledHeight = 200;
-              scaledWidth = Math.round((dimensions.width / dimensions.height) * 200);
-            } else {
-              scaledWidth = 200;
-              scaledHeight = Math.round((dimensions.height / dimensions.width) * 200);
-            }
-            const imgId = workbook.addImage({
-              buffer: imgBuffer,
-              extension: ext === 'jpg' ? 'jpeg' : ext,
-            });
-            sheet.addImage(imgId, {
-              tl: { col: 0.1, row: idx + 1 + 0.05 },
-              ext: { width: scaledWidth, height: scaledHeight },
-            });
-            hasImage = true;
-            imgHeight = scaledHeight;
-          } catch (imgErr) { /* skip */ }
-        }
+      setCell(row, 2, product.name || '-', { ...dataFont, bold: true });
+      setCell(row, 3, product.description || '-');
+      setCell(row, 4, product.barcode || '-');
+      setCell(row, 5, parseFloat(product.cost_price) || 0);
+      setCell(row, 6, parseFloat(product.retail_price) || 0);
+      setCell(row, 7, parseFloat(product.wholesale_price) || 0);
+      if (location_id) {
+        setCell(row, 8, product.quantity);
       }
-      row.height = hasImage ? Math.round(imgHeight * 0.75) + 5 : 25;
-    });
+    }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=yogini-arts-products.xlsx');
-
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {
@@ -564,7 +459,7 @@ router.get('/export/excel', authenticate, async (req, res) => {
   }
 });
 
-// GET /export/sales - export sale transactions using SaleTemplates.xlsx
+// ─── GET /export/sales — using SaleTemplates.xlsx ──────────────────────────────
 router.get('/export/sales', authenticate, async (req, res) => {
   try {
     const { location_id, start_date, end_date } = req.query;
@@ -594,173 +489,37 @@ router.get('/export/sales', authenticate, async (req, res) => {
       limit: 1000,
     });
 
-    const path = require('path');
-    const fs = require('fs');
-    const templatePath = path.join(__dirname, '..', '..', '..', 'frontend', 'public', 'Excels Templates', 'SaleTemplates.xlsx');
+    const headers = ['Image', 'Product Name', 'Bar Code', 'Location', 'Qty', 'Price Type', 'Sold Price', 'Date', 'Sold By'];
+    const colWidths = [IMG_COL_WIDTH, 30, 25, 20, 10, 15, 15, 20, 18];
 
-    const workbook = new ExcelJS.Workbook();
+    const { workbook, sheet } = await loadTemplate('SaleTemplates.xlsx', 'Sales Report', headers, colWidths);
 
-    if (fs.existsSync(templatePath)) {
-      await workbook.xlsx.readFile(templatePath);
-    }
-
-    const sheet = workbook.getWorksheet(1) || workbook.addWorksheet('Sales Report');
-
-    // Clear data rows (row 4+)
     const startRow = 4;
-    for (let r = startRow; r <= sheet.rowCount; r++) {
-      const row = sheet.getRow(r);
-      row.eachCell({ includeEmpty: true }, (cell) => { cell.value = null; });
-    }
-
-    // Style constants matching template
-    const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF720E20' } };
-    const headerFont = { size: 13, color: { theme: 0 }, name: 'Arial', bold: true };
-    const headerAlign = { horizontal: 'center', vertical: 'middle' };
-    const dataFont = { size: 11, name: 'Arial' };
-    const dataAlign = { horizontal: 'center', vertical: 'middle' };
-    const thinBorder = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' },
-    };
-
-    // Ensure header row exists
-    const headerRow = sheet.getRow(3);
-    const headers = ['Image', 'Product Name', 'Bar Code', 'Location', 'Qty', 'Price Type', 'Unit Price', 'Total', 'Date', 'Sold By'];
-    headers.forEach((h, i) => {
-      const cell = headerRow.getCell(i + 1);
-      if (!cell.value) {
-        cell.value = h;
-        cell.font = headerFont;
-        cell.fill = headerFill;
-        cell.alignment = headerAlign;
-        cell.border = thinBorder;
-      }
-    });
-    headerRow.height = 30;
-
-    // Set column widths
-    sheet.getColumn(1).width = 22;
-    sheet.getColumn(2).width = 30;
-    sheet.getColumn(3).width = 25;
-    sheet.getColumn(4).width = 20;
-    sheet.getColumn(5).width = 10;
-    sheet.getColumn(6).width = 15;
-    sheet.getColumn(7).width = 15;
-    sheet.getColumn(8).width = 15;
-    sheet.getColumn(9).width = 20;
-    sheet.getColumn(10).width = 18;
-
-    // Add data rows with embedded product images
     for (let idx = 0; idx < sales.length; idx++) {
       const tx = sales[idx];
       const row = sheet.getRow(startRow + idx);
 
-      // Image column
-      const imgCell = row.getCell(1);
-      imgCell.value = '';
-      imgCell.font = dataFont;
-      imgCell.alignment = dataAlign;
-      imgCell.border = thinBorder;
+      setCell(row, 1, '');
+      const { hasImage, imgHeight } = await embedImage(workbook, sheet, tx.product?.image_url, 0, startRow + idx - 1);
+      row.height = hasImage ? imgHeight : 25;
 
-      let hasImage = false;
-      let imgHeight = 0;
-      const imageUrl = tx.product?.image_url;
-      if (imageUrl && imageUrl.startsWith('/uploads/')) {
-        const imgPath = path.join(__dirname, '..', '..', imageUrl);
-        if (fs.existsSync(imgPath)) {
-          try {
-            const imgBuffer = fs.readFileSync(imgPath);
-            const ext = path.extname(imgPath).replace('.', '').toLowerCase();
-            const dimensions = imageSize(imgBuffer);
-            let scaledWidth, scaledHeight;
-            if (dimensions.height > dimensions.width) {
-              scaledHeight = 200;
-              scaledWidth = Math.round((dimensions.width / dimensions.height) * 200);
-            } else {
-              scaledWidth = 200;
-              scaledHeight = Math.round((dimensions.height / dimensions.width) * 200);
-            }
-            const imgId = workbook.addImage({
-              buffer: imgBuffer,
-              extension: ext === 'jpg' ? 'jpeg' : ext,
-            });
-            sheet.addImage(imgId, {
-              tl: { col: 0.1, row: startRow + idx - 1 + 0.05 },
-              ext: { width: scaledWidth, height: scaledHeight },
-            });
-            hasImage = true;
-            imgHeight = scaledHeight;
-          } catch (imgErr) { /* skip */ }
-        }
-      }
-      row.height = hasImage ? Math.round(imgHeight * 0.75) + 5 : 25;
-
-      const nameCell = row.getCell(2);
-      nameCell.value = tx.product?.name || '-';
-      nameCell.font = { ...dataFont, bold: true };
-      nameCell.alignment = dataAlign;
-      nameCell.border = thinBorder;
-
-      const barcodeCell = row.getCell(3);
-      barcodeCell.value = tx.product?.barcode || '-';
-      barcodeCell.font = dataFont;
-      barcodeCell.alignment = dataAlign;
-      barcodeCell.border = thinBorder;
-
-      const locationCell = row.getCell(4);
-      locationCell.value = tx.fromLocation?.name || '-';
-      locationCell.font = { ...dataFont, bold: true, color: { argb: 'FF720E20' } };
-      locationCell.alignment = dataAlign;
-      locationCell.border = thinBorder;
-
-      const qtyCell = row.getCell(5);
-      qtyCell.value = tx.quantity;
-      qtyCell.font = dataFont;
-      qtyCell.alignment = dataAlign;
-      qtyCell.border = thinBorder;
-
-      const priceTypeCell = row.getCell(6);
-      priceTypeCell.value = tx.price_type || '-';
-      priceTypeCell.font = dataFont;
-      priceTypeCell.alignment = dataAlign;
-      priceTypeCell.border = thinBorder;
-
-      const unitPriceCell = row.getCell(7);
-      unitPriceCell.value = parseFloat(tx.unit_price) || 0;
-      unitPriceCell.font = dataFont;
-      unitPriceCell.alignment = dataAlign;
-      unitPriceCell.border = thinBorder;
-
-      const totalCell = row.getCell(8);
-      totalCell.value = (parseFloat(tx.unit_price) || 0) * tx.quantity;
-      totalCell.font = { ...dataFont, bold: true };
-      totalCell.alignment = dataAlign;
-      totalCell.border = thinBorder;
-
-      const dateCell = row.getCell(9);
-      dateCell.value = new Date(tx.createdAt).toLocaleDateString();
-      dateCell.font = dataFont;
-      dateCell.alignment = dataAlign;
-      dateCell.border = thinBorder;
-
-      const soldByCell = row.getCell(10);
-      soldByCell.value = tx.createdByUser?.name || '-';
-      soldByCell.font = dataFont;
-      soldByCell.alignment = dataAlign;
-      soldByCell.border = thinBorder;
+      setCell(row, 2, tx.product?.name || '-', { ...dataFont, bold: true });
+      setCell(row, 3, tx.product?.barcode || '-');
+      setCell(row, 4, tx.fromLocation?.name || '-', { ...dataFont, bold: true, color: { argb: 'FF720E20' } });
+      setCell(row, 5, tx.quantity);
+      setCell(row, 6, tx.price_type || '-');
+      setCell(row, 7, parseFloat(tx.unit_price) || 0, { ...dataFont, bold: true });
+      setCell(row, 8, new Date(tx.createdAt).toLocaleDateString());
+      setCell(row, 9, tx.createdByUser?.name || '-');
     }
 
     const locName = location_id
       ? (await Location.findByPk(location_id))?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown'
       : 'All_Locations';
     const dateStr = new Date().toISOString().slice(0, 10);
-    const fileName = `${locName}_${dateStr}_sales.xlsx`;
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+    res.setHeader('Content-Disposition', `attachment; filename=${locName}_${dateStr}_sales.xlsx`);
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {

@@ -168,7 +168,7 @@ router.post('/transfer', authenticate, async (req, res) => {
 router.post('/sale', authenticate, async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { product_id, location_id, quantity, price_type, notes } = req.body;
+    const { product_id, location_id, quantity, price_type, unit_price: sent_price, notes } = req.body;
 
     if (!product_id || !location_id || !quantity || quantity <= 0 || !price_type) {
       await t.rollback();
@@ -191,7 +191,8 @@ router.post('/sale', authenticate, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Insufficient stock' });
     }
 
-    const unit_price = price_type === 'retail' ? product.retail_price : product.wholesale_price;
+    // Use the price sent by the client (user may have edited it); fall back to product price
+    const unit_price = sent_price != null ? parseFloat(sent_price) : (price_type === 'retail' ? product.retail_price : product.wholesale_price);
 
     // Deduct stock
     await inv.update({ quantity: inv.quantity - quantity }, { transaction: t });

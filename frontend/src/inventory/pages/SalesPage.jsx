@@ -425,6 +425,7 @@ export default function SalesPage() {
           location_id: form.location_id,
           quantity: item.quantity,
           price_type: form.price_type,
+          unit_price: getPrice(item.product),
         });
       }
       setMessage({ type: 'success', text: `${t('completeSale')}! ${t('total')}: ${cartTotal.toFixed(2)}` });

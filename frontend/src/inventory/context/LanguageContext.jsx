@@ -203,7 +203,6 @@ const translations = {
     transfer: 'Transfer',
     from: 'From',
     to: 'To',
-    qty: 'Qty',
     by: 'By',
     noTransactionsFound: 'No transactions found',
 
@@ -423,7 +422,6 @@ const translations = {
     transfer: '转移',
     from: '来源',
     to: '目的',
-    qty: '数量',
     by: '操作人',
     noTransactionsFound: '未找到交易记录',
 
