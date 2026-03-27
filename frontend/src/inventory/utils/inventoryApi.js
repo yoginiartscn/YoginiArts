@@ -19,23 +19,28 @@ export const getImageUrl = (url) => {
 export const productsApi = {
   getAll: (api, search = '') => api.get(`/products${search ? `?search=${search}` : ''}`),
   getById: (api, id) => api.get(`/products/${id}`),
-  create: (api, data, imageFile) => {
-    if (imageFile) {
+  create: (api, data, imageFile, imageFile2) => {
+    if (imageFile || imageFile2) {
       const formData = new FormData();
-      formData.append('image', imageFile);
+      if (imageFile) formData.append('image', imageFile);
+      if (imageFile2) formData.append('image2', imageFile2);
       Object.entries(data).forEach(([key, val]) => {
-        if (val !== undefined && val !== null && key !== 'image_url') formData.append(key, val);
+        if (val !== undefined && val !== null && key !== 'image_url' && key !== 'image_url_2') formData.append(key, val);
       });
       return api.post('/products', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
     }
-    return api.post('/products', data);
+    const cleanData = { ...data };
+    if (!cleanData.image_url) delete cleanData.image_url;
+    if (!cleanData.image_url_2) delete cleanData.image_url_2;
+    return api.post('/products', cleanData);
   },
-  update: (api, id, data, imageFile) => {
-    if (imageFile) {
+  update: (api, id, data, imageFile, imageFile2) => {
+    if (imageFile || imageFile2) {
       const formData = new FormData();
-      formData.append('image', imageFile);
+      if (imageFile) formData.append('image', imageFile);
+      if (imageFile2) formData.append('image2', imageFile2);
       Object.entries(data).forEach(([key, val]) => {
-        if (val !== undefined && val !== null && key !== 'image_url') formData.append(key, val);
+        if (val !== undefined && val !== null && key !== 'image_url' && key !== 'image_url_2') formData.append(key, val);
       });
       return api.put(`/products/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
     }

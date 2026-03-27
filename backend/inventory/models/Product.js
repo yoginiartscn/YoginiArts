@@ -20,6 +20,10 @@ const Product = sequelize
         type: DataTypes.STRING,
         allowNull: true,
       },
+      image_url_2: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
       barcode: {
         type: DataTypes.STRING,
         allowNull: true,

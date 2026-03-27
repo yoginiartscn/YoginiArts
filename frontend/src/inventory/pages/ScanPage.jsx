@@ -11,6 +11,7 @@ export default function ScanPage() {
   const [inventory, setInventory] = useState([]);
   const [error, setError] = useState('');
   const [manualBarcode, setManualBarcode] = useState('');
+  const [previewImages, setPreviewImages] = useState(null);
 
   const lookupBarcode = async (barcode) => {
     setError('');
@@ -90,9 +91,17 @@ export default function ScanPage() {
           {product ? (
             <div>
               <div className="space-y-3 mb-6">
-                {product.image_url && (
-                  <img src={getImageUrl(product.image_url)} alt={product.name} className="w-32 h-32 object-cover rounded-[1.2rem]" />
-                )}
+                {(() => {
+                  const imgs = [getImageUrl(product.image_url), getImageUrl(product.image_url_2)].filter(Boolean);
+                  return imgs.length > 0 ? (
+                    <div className="relative w-32 h-32 cursor-pointer" onClick={() => setPreviewImages({ images: imgs, index: 0 })}>
+                      <img src={imgs[0]} alt={product.name} className="w-32 h-32 object-cover rounded-[1.2rem] hover:opacity-80 transition-opacity" />
+                      {imgs.length > 1 && (
+                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-600 text-white text-xs font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
                 <h3 className="text-xl font-bold">{product.name}</h3>
                 {product.description && (
                   <p className="text-gray-600">{product.description}</p>
@@ -152,6 +161,52 @@ export default function ScanPage() {
           ) : null}
         </div>
       </div>
+      {/* Image Preview Popup with prev/next */}
+      {previewImages && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => setPreviewImages(null)}
+        >
+          <div className="relative max-w-lg max-h-[80vh] flex items-center" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setPreviewImages(null)}
+              className="absolute -top-3 -right-3 z-10 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            {previewImages.images.length > 1 && (
+              <button
+                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index - 1 + previewImages.images.length) % previewImages.images.length })}
+                className="absolute -left-12 w-9 h-9 bg-white/90 rounded-full shadow-lg flex items-center justify-center text-gray-700 hover:bg-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+            <img src={previewImages.images[previewImages.index]} alt="Product" className="max-w-full max-h-[80vh] object-contain rounded-[1.2rem]" />
+            {previewImages.images.length > 1 && (
+              <button
+                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index + 1) % previewImages.images.length })}
+                className="absolute -right-12 w-9 h-9 bg-white/90 rounded-full shadow-lg flex items-center justify-center text-gray-700 hover:bg-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+            {previewImages.images.length > 1 && (
+              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {previewImages.images.map((_, i) => (
+                  <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === previewImages.index ? 'bg-white' : 'bg-white/40'}`} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

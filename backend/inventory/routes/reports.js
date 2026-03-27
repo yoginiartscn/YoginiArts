@@ -18,7 +18,7 @@ const TEMPLATES_DIR_PROD = path.join(__dirname, '..', '..', '..', 'dist', 'Excel
 const TEMPLATES_DIR_DEV = path.join(__dirname, '..', '..', '..', 'frontend', 'public', 'Excels Templates');
 const TEMPLATES_DIR = fs.existsSync(TEMPLATES_DIR_DEV) ? TEMPLATES_DIR_DEV : TEMPLATES_DIR_PROD;
 const IMG_FIT = 150;        // px — larger dimension scaled to this
-const IMG_COL_WIDTH = 22;   // Excel column width (chars) for image column
+const IMG_COL_WIDTH = 40;   // Excel column width (chars) for image column (fits two images side by side)
 
 const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF720E20' } };
 const headerFont = { size: 13, color: { theme: 0 }, name: 'Arial', bold: true };
@@ -32,40 +32,56 @@ const thinBorder = {
   right: { style: 'thin' },
 };
 
-// ─── embedImage helper ─────────────────────────────────────────────────────────
-async function embedImage(workbook, sheet, imageUrl, col, rowIndex) {
-  if (!imageUrl) return { hasImage: false, imgHeight: 0 };
-  try {
-    const imgBuffer = await downloadImage(imageUrl);
-    if (!imgBuffer) return { hasImage: false, imgHeight: 0 };
-    const ext = path.extname(imageUrl.split('?')[0]).replace('.', '').toLowerCase() || 'jpeg';
-    const dimensions = imageSize(imgBuffer);
-    let w, h;
-    if (dimensions.height >= dimensions.width) {
-      h = IMG_FIT;
-      w = Math.round((dimensions.width / dimensions.height) * IMG_FIT);
-    } else {
-      w = IMG_FIT;
-      h = Math.round((dimensions.height / dimensions.width) * IMG_FIT);
+// ─── embedImages helper — place 1 or 2 images side-by-side in a single cell ──
+async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex) {
+  const urls = [imageUrl1, imageUrl2].filter(Boolean);
+  if (urls.length === 0) return { hasImage: false, imgHeight: 0 };
+
+  const cellWidthPx = IMG_COL_WIDTH * 7.5;   // total cell width in px
+  const cellHeightPx = IMG_FIT + 10;
+  let maxH = 0;
+
+  for (let i = 0; i < urls.length; i++) {
+    try {
+      const imgBuffer = await downloadImage(urls[i]);
+      if (!imgBuffer) continue;
+      const ext = path.extname(urls[i].split('?')[0]).replace('.', '').toLowerCase() || 'jpeg';
+      const dimensions = imageSize(imgBuffer);
+
+      // Scale image: if two images, each gets half the cell width
+      const slotWidth = urls.length === 1 ? cellWidthPx : cellWidthPx / 2;
+      const maxImgW = slotWidth - 8;  // 4px padding each side
+      const maxImgH = IMG_FIT;
+      const scaleW = maxImgW / dimensions.width;
+      const scaleH = maxImgH / dimensions.height;
+      const scale = Math.min(scaleW, scaleH, 1); // don't upscale
+      const w = Math.round(dimensions.width * scale);
+      const h = Math.round(dimensions.height * scale);
+      if (h > maxH) maxH = h;
+
+      const imgId = workbook.addImage({
+        buffer: imgBuffer,
+        extension: ext === 'jpg' ? 'jpeg' : ext,
+      });
+
+      // Horizontal offset: image i goes in the i-th slot
+      const slotStartX = i * slotWidth;
+      const padX = slotStartX + Math.max(0, (slotWidth - w) / 2);
+      const padY = Math.max(0, (cellHeightPx - h) / 2);
+      const c = Math.floor(col);
+
+      sheet.addImage(imgId, {
+        tl: { col: c + padX / cellWidthPx, row: rowIndex + padY / cellHeightPx },
+        ext: { width: w, height: h },
+      });
+    } catch {
+      // skip failed image
     }
-    const imgId = workbook.addImage({
-      buffer: imgBuffer,
-      extension: ext === 'jpg' ? 'jpeg' : ext,
-    });
-    const c = Math.floor(col);
-    const cellWidthPx = IMG_COL_WIDTH * 7.5;
-    const cellHeightPx = IMG_FIT + 10;
-    const padX = Math.max(0, (cellWidthPx - w) / 2);
-    const padY = Math.max(0, (cellHeightPx - h) / 2);
-    sheet.addImage(imgId, {
-      tl: { col: c + padX / cellWidthPx, row: rowIndex + padY / cellHeightPx },
-      ext: { width: w, height: h },
-    });
-    const rowHeightPts = Math.round(cellHeightPx / 1.33);
-    return { hasImage: true, imgHeight: rowHeightPts };
-  } catch {
-    return { hasImage: false, imgHeight: 0 };
   }
+
+  if (maxH === 0) return { hasImage: false, imgHeight: 0 };
+  const rowHeightPts = Math.round(cellHeightPx / 1.33);
+  return { hasImage: true, imgHeight: rowHeightPts };
 }
 
 // ─── loadTemplate: load xlsx template, clear data rows, set headers ────────────
@@ -147,7 +163,7 @@ router.get('/transactions', authenticate, async (req, res) => {
     const { count, rows } = await Transaction.findAndCountAll({
       where,
       include: [
-        { model: Product, as: 'product', attributes: ['id', 'name', 'barcode', 'image_url'] },
+        { model: Product, as: 'product', attributes: ['id', 'name', 'barcode', 'image_url', 'image_url_2'] },
         { model: Location, as: 'fromLocation', attributes: ['id', 'name'] },
         { model: Location, as: 'toLocation', attributes: ['id', 'name'] },
         { model: User, as: 'createdByUser', attributes: ['id', 'name'] },
@@ -312,7 +328,7 @@ router.get('/export/quotation', authenticate, async (req, res) => {
         const row = sheet.getRow(startRow + idx);
 
         setCell(row, 1, '');
-        const { hasImage, imgHeight } = await embedImage(workbook, sheet, p.image_url, 0, startRow + idx - 1);
+        const { hasImage, imgHeight } = await embedImages(workbook, sheet, p.image_url, p.image_url_2, 0, startRow + idx - 1);
         row.height = hasImage ? imgHeight : 25;
 
         setCell(row, 2, p.name || '-', { ...dataFont, bold: true });
@@ -352,7 +368,7 @@ router.get('/export/transfers', authenticate, async (req, res) => {
     const transfers = await Transaction.findAll({
       where,
       include: [
-        { model: Product, as: 'product', attributes: ['id', 'name', 'barcode', 'image_url'] },
+        { model: Product, as: 'product', attributes: ['id', 'name', 'barcode', 'image_url', 'image_url_2'] },
         { model: Location, as: 'fromLocation', attributes: ['id', 'name'] },
         { model: Location, as: 'toLocation', attributes: ['id', 'name'] },
       ],
@@ -376,7 +392,7 @@ router.get('/export/transfers', authenticate, async (req, res) => {
       const row = sheet.getRow(startRow + idx);
 
       setCell(row, 1, '');
-      const { hasImage, imgHeight } = await embedImage(workbook, sheet, tx.product?.image_url, 0, startRow + idx - 1);
+      const { hasImage, imgHeight } = await embedImages(workbook, sheet, tx.product?.image_url, tx.product?.image_url_2, 0, startRow + idx - 1);
       row.height = hasImage ? imgHeight : 25;
 
       setCell(row, 2, tx.product?.name || '-', { ...dataFont, bold: true });
@@ -435,7 +451,7 @@ router.get('/export/excel', authenticate, async (req, res) => {
       const row = sheet.getRow(startRow + idx);
 
       setCell(row, 1, '');
-      const { hasImage, imgHeight } = await embedImage(workbook, sheet, product.image_url, 0, startRow + idx - 1);
+      const { hasImage, imgHeight } = await embedImages(workbook, sheet, product.image_url, product.image_url_2, 0, startRow + idx - 1);
       row.height = hasImage ? imgHeight : 25;
 
       setCell(row, 2, product.name || '-', { ...dataFont, bold: true });
@@ -481,7 +497,7 @@ router.get('/export/sales', authenticate, async (req, res) => {
     const sales = await Transaction.findAll({
       where,
       include: [
-        { model: Product, as: 'product', attributes: ['id', 'name', 'barcode', 'image_url'] },
+        { model: Product, as: 'product', attributes: ['id', 'name', 'barcode', 'image_url', 'image_url_2'] },
         { model: Location, as: 'fromLocation', attributes: ['id', 'name'] },
         { model: User, as: 'createdByUser', attributes: ['id', 'name'] },
       ],
@@ -500,7 +516,7 @@ router.get('/export/sales', authenticate, async (req, res) => {
       const row = sheet.getRow(startRow + idx);
 
       setCell(row, 1, '');
-      const { hasImage, imgHeight } = await embedImage(workbook, sheet, tx.product?.image_url, 0, startRow + idx - 1);
+      const { hasImage, imgHeight } = await embedImages(workbook, sheet, tx.product?.image_url, tx.product?.image_url_2, 0, startRow + idx - 1);
       row.height = hasImage ? imgHeight : 25;
 
       setCell(row, 2, tx.product?.name || '-', { ...dataFont, bold: true });

@@ -22,6 +22,14 @@ const upload = multer({
   },
 });
 
+// Wrapper: run multer only for multipart requests, skip for JSON
+const optionalUpload = (fields) => (req, res, next) => {
+  if (req.is('multipart/form-data')) {
+    return upload.fields(fields)(req, res, next);
+  }
+  next();
+};
+
 // GET / - list all products
 router.get('/', authenticate, async (req, res) => {
   try {
@@ -39,7 +47,7 @@ router.get('/', authenticate, async (req, res) => {
       ];
     }
 
-    const products = await Product.findAll({ where, order: [['createdAt', 'DESC']] });
+    const products = await Product.findAll({ where, order: [['name', 'ASC']] });
     cache.set(cacheKey, products, 3000);
     res.json({ success: true, data: products });
   } catch (error) {
@@ -62,9 +70,11 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 // POST / - create product (with optional image upload)
-router.post('/', authenticate, upload.single('image'), async (req, res) => {
+router.post('/', authenticate, optionalUpload([{ name: 'image', maxCount: 1 }, { name: 'image2', maxCount: 1 }]), async (req, res) => {
   try {
-    const { name, description, image_url, barcode, cost_price, retail_price, wholesale_price, category, weight, size } = req.body;
+    const { name, description, image_url, image_url_2, barcode, cost_price, retail_price, wholesale_price, category, weight, size } = req.body;
+
+    const qty = Math.max(1, parseInt(req.body.quantity) || 1);
 
     if (!name) {
       return res.status(400).json({ success: false, message: 'Product name is required' });
@@ -72,14 +82,20 @@ router.post('/', authenticate, upload.single('image'), async (req, res) => {
 
     // Use uploaded file (→ Supabase), or provided URL (ignore ephemeral blob: URLs)
     let finalImageUrl = (image_url && !image_url.startsWith('blob:')) ? image_url : null;
-    if (req.file) {
-      finalImageUrl = await uploadImage(req.file.buffer, req.file.originalname);
+    if (req.files?.image?.[0]) {
+      finalImageUrl = await uploadImage(req.files.image[0].buffer, req.files.image[0].originalname);
+    }
+
+    let finalImageUrl2 = (image_url_2 && !image_url_2.startsWith('blob:')) ? image_url_2 : null;
+    if (req.files?.image2?.[0]) {
+      finalImageUrl2 = await uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname);
     }
 
     const product = await Product.create({
       name,
       description,
       image_url: finalImageUrl,
+      image_url_2: finalImageUrl2,
       barcode: barcode || null,
       cost_price: cost_price || 0,
       retail_price: retail_price || 0,
@@ -97,13 +113,13 @@ router.post('/', authenticate, upload.single('image'), async (req, res) => {
       locations = await Location.findAll();
     }
 
-    // Auto stock-in at Guangzhou Warehouse with quantity 1
+    // Auto stock-in at Guangzhou Warehouse
     const [gzInv, gzCreated] = await Inventory.findOrCreate({
       where: { product_id: product.id, location_id: guangzhou.id },
-      defaults: { quantity: 1 },
+      defaults: { quantity: qty },
     });
     if (!gzCreated) {
-      await gzInv.update({ quantity: gzInv.quantity + 1 });
+      await gzInv.update({ quantity: gzInv.quantity + qty });
     }
 
     // Create inventory records (quantity 0) at other locations + log transaction in parallel
@@ -121,8 +137,8 @@ router.post('/', authenticate, upload.single('image'), async (req, res) => {
         type: 'stock_in',
         product_id: product.id,
         to_location_id: guangzhou.id,
-        quantity: 1,
-        notes: 'Auto stock-in on product creation',
+        quantity: qty,
+        notes: `Auto stock-in on product creation (qty: ${qty})`,
         created_by: req.user?.id || null,
       }),
     ]);
@@ -141,22 +157,29 @@ router.post('/', authenticate, upload.single('image'), async (req, res) => {
 });
 
 // PUT /:id - update product (with optional image upload)
-router.put('/:id', authenticate, upload.single('image'), async (req, res) => {
+router.put('/:id', authenticate, optionalUpload([{ name: 'image', maxCount: 1 }, { name: 'image2', maxCount: 1 }]), async (req, res) => {
   try {
     const product = await Product.findByPk(req.params.id);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    const { name, description, image_url, barcode, cost_price, retail_price, wholesale_price, category, weight, size } = req.body;
+    const { name, description, image_url, image_url_2, barcode, cost_price, retail_price, wholesale_price, category, weight, size } = req.body;
 
     // Use uploaded file (→ Supabase), or provided URL, or keep existing (ignore ephemeral blob: URLs)
     let finalImageUrl = image_url !== undefined ? ((image_url && image_url.startsWith('blob:')) ? product.image_url : image_url) : product.image_url;
-    if (req.file) {
-      finalImageUrl = await uploadImage(req.file.buffer, req.file.originalname);
-      // Delete old image from Supabase Storage
+    if (req.files?.image?.[0]) {
+      finalImageUrl = await uploadImage(req.files.image[0].buffer, req.files.image[0].originalname);
       if (product.image_url) {
-        deleteImage(product.image_url).catch(() => {}); // fire-and-forget
+        deleteImage(product.image_url).catch(() => {});
+      }
+    }
+
+    let finalImageUrl2 = image_url_2 !== undefined ? ((image_url_2 && image_url_2.startsWith('blob:')) ? product.image_url_2 : image_url_2) : product.image_url_2;
+    if (req.files?.image2?.[0]) {
+      finalImageUrl2 = await uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname);
+      if (product.image_url_2) {
+        deleteImage(product.image_url_2).catch(() => {});
       }
     }
 
@@ -164,6 +187,7 @@ router.put('/:id', authenticate, upload.single('image'), async (req, res) => {
       name: name !== undefined ? name : product.name,
       description: description !== undefined ? description : product.description,
       image_url: finalImageUrl,
+      image_url_2: finalImageUrl2,
       barcode: barcode !== undefined ? barcode : product.barcode,
       cost_price: cost_price !== undefined ? cost_price : product.cost_price,
       retail_price: retail_price !== undefined ? retail_price : product.retail_price,
@@ -172,6 +196,21 @@ router.put('/:id', authenticate, upload.single('image'), async (req, res) => {
       weight: weight !== undefined ? weight : product.weight,
       size: size !== undefined ? size : product.size,
     });
+
+    // Update inventory quantity if provided
+    const newQty = parseInt(req.body.quantity);
+    if (!isNaN(newQty) && newQty >= 0) {
+      const invRecords = await Inventory.findAll({ where: { product_id: product.id } });
+      const currentTotal = invRecords.reduce((sum, inv) => sum + inv.quantity, 0);
+      const diff = newQty - currentTotal;
+      if (diff !== 0 && invRecords.length > 0) {
+        // Apply diff to the first location (usually Guangzhou Warehouse)
+        const primary = invRecords[0];
+        await primary.update({ quantity: Math.max(0, primary.quantity + diff) });
+        cache.invalidate('inventory');
+        cache.invalidate('summary');
+      }
+    }
 
     cache.invalidate('products');
     res.json({ success: true, data: product });
@@ -192,9 +231,12 @@ router.delete('/:id', authenticate, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    // Delete image from Supabase Storage
+    // Delete images from Supabase Storage
     if (product.image_url) {
       deleteImage(product.image_url).catch(() => {});
+    }
+    if (product.image_url_2) {
+      deleteImage(product.image_url_2).catch(() => {});
     }
 
     await product.destroy();

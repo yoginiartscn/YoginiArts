@@ -13,10 +13,12 @@ export default function InventoryPage() {
   const [showStockIn, setShowStockIn] = useState(false);
   const [products, setProducts] = useState([]);
   const [stockForm, setStockForm] = useState({ product_id: '', location_id: '', quantity: '' });
+  const [previewImages, setPreviewImages] = useState(null);
   const [editingInv, setEditingInv] = useState(null);
   const [editQty, setEditQty] = useState(1);
   const [locDropdownOpen, setLocDropdownOpen] = useState(false);
   const locDropdownRef = useRef(null);
+  const [filterCategory, setFilterCategory] = useState('');
 
   const fetchData = async () => {
     try {
@@ -112,9 +114,11 @@ export default function InventoryPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">{t('inventory')}</h1>
-        <div className="flex items-center gap-3">
+      {/* Header: title centered, location + stock-in on right */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+        <div className="flex-1" />
+        <h1 className="text-2xl font-bold text-gray-800 text-center">{t('inventory')}</h1>
+        <div className="flex-1 flex items-center justify-end gap-3">
           {/* Custom Location Dropdown */}
           <div className="relative" ref={locDropdownRef}>
             <button
@@ -171,6 +175,37 @@ export default function InventoryPage() {
             {t('stockIn')}
           </button>
         </div>
+      </div>
+
+      {/* Category filter buttons with qty totals */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {(() => {
+          const cats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries', 'Others'];
+          return cats.map(cat => {
+            const isOthers = cat === 'Others';
+            const catInv = inventory.filter(inv => {
+              const pCat = inv.product?.category;
+              if (isOthers) return !pCat || !['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].includes(pCat);
+              return pCat === cat;
+            });
+            const totalQty = catInv.reduce((sum, inv) => sum + inv.quantity, 0);
+            if (totalQty === 0 && filterCategory !== cat) return null;
+            const isActive = filterCategory === cat;
+            return (
+              <button
+                key={cat}
+                onClick={() => setFilterCategory(isActive ? '' : cat)}
+                className={`px-3 py-1.5 rounded-[1.2rem] text-sm font-medium transition-all border ${
+                  isActive
+                    ? 'bg-amber-800 text-white border-amber-800'
+                    : 'bg-white text-amber-800 border-gray-200 hover:border-amber-300'
+                }`}
+              >
+                {td(cat)} <span className="font-bold ml-1">| &nbsp;{totalQty} QTY</span>
+              </button>
+            );
+          });
+        })()}
       </div>
 
       {/* Stock In Modal */}
@@ -254,16 +289,32 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody>
-              {inventory.map((inv) => (
+              {inventory.filter(inv => {
+                if (!filterCategory) return true;
+                const pCat = inv.product?.category;
+                if (filterCategory === 'Others') return !pCat || !['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].includes(pCat);
+                return pCat === filterCategory;
+              }).map((inv) => (
                 <tr key={inv.id} className="transition-colors hover:bg-amber-50/60">
                   <td className="px-5 py-4 border-b border-gray-100">
-                    {inv.product?.image_url ? (
-                      <img src={getImageUrl(inv.product.image_url)} alt={inv.product.name} className="w-10 h-10 rounded-lg object-cover" />
-                    ) : (
-                      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">
-                        N/A
-                      </div>
-                    )}
+                    {(() => {
+                      const imgs = [getImageUrl(inv.product?.image_url), getImageUrl(inv.product?.image_url_2)].filter(Boolean);
+                      return imgs.length > 0 ? (
+                        <div className="relative w-10 h-10">
+                          <img
+                            src={imgs[0]}
+                            alt={inv.product?.name}
+                            className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => setPreviewImages({ images: imgs, index: 0 })}
+                          />
+                          {imgs.length > 1 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">N/A</div>
+                      );
+                    })()}
                   </td>
                   <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{inv.product?.name || '-'}</td>
                   <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{inv.product?.barcode || '-'}</td>
@@ -347,6 +398,53 @@ export default function InventoryPage() {
                 {t('cancel')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Preview Popup with prev/next */}
+      {previewImages && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => setPreviewImages(null)}
+        >
+          <div className="relative max-w-lg max-h-[80vh] flex items-center" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setPreviewImages(null)}
+              className="absolute -top-3 -right-3 z-10 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            {previewImages.images.length > 1 && (
+              <button
+                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index - 1 + previewImages.images.length) % previewImages.images.length })}
+                className="absolute -left-12 w-9 h-9 bg-white/90 rounded-full shadow-lg flex items-center justify-center text-gray-700 hover:bg-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+            <img src={previewImages.images[previewImages.index]} alt="Product" className="max-w-full max-h-[80vh] object-contain rounded-[1.2rem]" />
+            {previewImages.images.length > 1 && (
+              <button
+                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index + 1) % previewImages.images.length })}
+                className="absolute -right-12 w-9 h-9 bg-white/90 rounded-full shadow-lg flex items-center justify-center text-gray-700 hover:bg-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+            {previewImages.images.length > 1 && (
+              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {previewImages.images.map((_, i) => (
+                  <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === previewImages.index ? 'bg-white' : 'bg-white/40'}`} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

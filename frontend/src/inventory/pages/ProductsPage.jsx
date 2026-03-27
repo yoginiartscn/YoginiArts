@@ -22,13 +22,14 @@ export default function ProductsPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [form, setForm] = useState({
-    name: '', description: '', image_url: '', barcode: '',
+    name: '', description: '', image_url: '', image_url_2: '', barcode: '',
     cost_price: '', retail_price: '', wholesale_price: '',
-    category: '', weight: '', size: '',
+    category: '', weight: '', size: '', quantity: 1,
   });
   const [imagePreview, setImagePreview] = useState(null);
+  const [imagePreview2, setImagePreview2] = useState(null);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
-  const [previewImage, setPreviewImage] = useState(null);
+  const [previewImages, setPreviewImages] = useState(null); // { images: [url, ...], index: 0 }
   const [deleteProduct, setDeleteProduct] = useState(null);
 
   const [showSearch, setShowSearch] = useState(false);
@@ -49,7 +50,14 @@ export default function ProductsPage() {
   const [duplicateQty, setDuplicateQty] = useState(1);
   const categoryOptions = ['Singing Bowl', 'Thanka', 'Jewelleries', 'Thanka Locket'];
   const productImageRef = useRef(null);
+  const productImageRef2 = useRef(null);
   const [imageFile, setImageFile] = useState(null);
+  const [imageFile2, setImageFile2] = useState(null);
+
+  const [batchScanned, setBatchScanned] = useState([]); // [{ barcode, name, category, matched }]
+  const [batchScanning, setBatchScanning] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
+  const [batchEditIndex, setBatchEditIndex] = useState(null); // index being edited, or null
 
   const scanInputRef = useRef(null);
   const scanBufferRef = useRef('');
@@ -76,18 +84,33 @@ export default function ProductsPage() {
   }, [search]);
 
   const resetForm = () => {
-    setForm({ name: '', description: '', image_url: '', barcode: '', cost_price: '', retail_price: '', wholesale_price: '', category: '', weight: '', size: '' });
+    setForm({ name: '', description: '', image_url: '', image_url_2: '', barcode: '', cost_price: '', retail_price: '', wholesale_price: '', category: '', weight: '', size: '', quantity: 1 });
     setImagePreview(null);
+    setImagePreview2(null);
     setImageFile(null);
+    setImageFile2(null);
     setEditingProduct(null);
+    setBatchEditIndex(null);
     setShowForm(false);
   };
 
-  const handleEdit = (product) => {
+  const handleEdit = async (product) => {
+    // Fetch current inventory quantity for this product
+    let qty = 1;
+    try {
+      const invRes = await api.get('/inventory');
+      const invData = invRes.data.data || [];
+      const totalQty = invData
+        .filter(inv => inv.product_id === product.id || inv.product?.id === product.id)
+        .reduce((sum, inv) => sum + inv.quantity, 0);
+      if (totalQty > 0) qty = totalQty;
+    } catch { /* default to 1 */ }
+
     setForm({
       name: product.name || '',
       description: product.description || '',
       image_url: product.image_url || '',
+      image_url_2: product.image_url_2 || '',
       barcode: product.barcode || '',
       cost_price: product.cost_price || '',
       retail_price: product.retail_price || '',
@@ -95,20 +118,36 @@ export default function ProductsPage() {
       category: product.category || '',
       weight: product.weight || '',
       size: product.size || '',
+      quantity: qty,
     });
     setImagePreview(getImageUrl(product.image_url) || null);
+    setImagePreview2(getImageUrl(product.image_url_2) || null);
     setImageFile(null);
+    setImageFile2(null);
     setEditingProduct(product);
     setShowForm(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // If editing from batch scan, update the batch item and go back
+    if (batchEditIndex !== null) {
+      setBatchScanned(prev => prev.map((item, i) =>
+        i === batchEditIndex
+          ? { ...item, barcode: form.barcode, name: form.name, category: form.category }
+          : item
+      ));
+      setBatchEditIndex(null);
+      setShowForm(false);
+      setShowScanner(true);
+      setScanMode('upload');
+      return;
+    }
     try {
       if (editingProduct) {
-        await productsApi.update(api, editingProduct.id, form, imageFile);
+        await productsApi.update(api, editingProduct.id, form, imageFile, imageFile2);
       } else {
-        await productsApi.create(api, form, imageFile);
+        await productsApi.create(api, form, imageFile, imageFile2);
       }
       resetForm();
       fetchProducts();
@@ -128,20 +167,37 @@ export default function ProductsPage() {
     }
   };
 
+  // Helper: add a barcode to the batch table
+  const addBarcodeToBatch = useCallback((barcode) => {
+    const matched = lookupBarcode(barcode);
+    const cat = getCategoryFromBarcode(barcode);
+    setBatchScanned(prev => {
+      if (prev.find(r => r.barcode === barcode)) return prev; // skip duplicates
+      return [...prev, {
+        barcode,
+        name: matched?.name || (cat === 'Singing Bowl' ? barcode : ''),
+        category: matched?.category || cat,
+        matched: !!matched,
+      }];
+    });
+  }, [products]);
+
   // Barcode scanner handler — detects rapid keystrokes from USB/Bluetooth scanner
   const handleScanKeyDown = useCallback((e) => {
     const now = Date.now();
 
-    // Enter key = scanner finished
+    // Enter key = scanner finished — add to batch
     if (e.key === 'Enter') {
       e.preventDefault();
-      const barcode = scanBufferRef.current.trim();
+      const barcode = (scanBufferRef.current || scannedBarcode).trim().toUpperCase();
       if (barcode.length >= 3) {
-        setScannedBarcode(barcode);
-        setScanStatus('done');
-        setMatchedProduct(lookupBarcode(barcode));
+        addBarcodeToBatch(barcode);
       }
       scanBufferRef.current = '';
+      lastKeyTimeRef.current = 0;
+      setScannedBarcode('');
+      // Re-focus the input for next scan
+      setTimeout(() => scanInputRef.current?.focus(), 50);
       return;
     }
 
@@ -151,23 +207,21 @@ export default function ProductsPage() {
     const timeDiff = now - lastKeyTimeRef.current;
     lastKeyTimeRef.current = now;
 
-    // If gap > 100ms, this is a new scan — reset buffer
-    if (timeDiff > 100) {
+    // If gap > 150ms, this is a new scan — reset buffer
+    if (timeDiff > 150) {
       scanBufferRef.current = '';
     }
 
     scanBufferRef.current += e.key;
-    setScanStatus('scanning');
 
     // Reset scanning status after idle
     clearTimeout(scanTimerRef.current);
     scanTimerRef.current = setTimeout(() => {
       if (scanBufferRef.current.length < 3) {
         scanBufferRef.current = '';
-        setScanStatus('waiting');
       }
-    }, 300);
-  }, []);
+    }, 500);
+  }, [scannedBarcode, addBarcodeToBatch]);
 
   const openScanner = () => {
     setShowAddChoice(false);
@@ -177,11 +231,16 @@ export default function ProductsPage() {
     setUploadPreview(null);
     setUploadError('');
     setMatchedProduct(null);
+    setBatchScanned([]);
+    setBatchScanning(false);
+    setBatchProgress({ done: 0, total: 0 });
+    setBatchAdding(false);
+    setBatchEditIndex(null);
     scanBufferRef.current = '';
     setShowScanner(true);
   };
 
-  // Global barcode scanner listener — auto-opens add product form on scan
+  // Global barcode scanner listener — auto-opens scanner modal with batch table
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       // Skip if any modal is open or user is typing in an input/textarea
@@ -196,20 +255,19 @@ export default function ProductsPage() {
         const barcode = globalScanBufferRef.current.trim();
         if (barcode.length >= 3) {
           const matched = lookupBarcode(barcode);
-          setScannedBarcode(barcode);
-          setMatchedProduct(matched);
           if (matched) {
+            // Existing product — open duplicate stock-in dialog
             setDuplicateProduct(matched);
             setDuplicateQty(1);
           } else {
-            const cat = getCategoryFromBarcode(barcode);
-            setForm((prev) => ({
-              ...prev,
-              barcode,
-              name: cat === 'Singing Bowl' ? barcode : '',
-              category: cat,
-            }));
-            setShowForm(true);
+            // New barcode — open scanner modal with batch table
+            if (!showScanner) {
+              setShowScanner(true);
+              setScanMode('device');
+              setScanStatus('waiting');
+              setScannedBarcode('');
+            }
+            addBarcodeToBatch(barcode);
           }
         }
         globalScanBufferRef.current = '';
@@ -420,11 +478,145 @@ export default function ProductsPage() {
     processImageFile(e.target.files?.[0]);
   };
 
+  // Batch scan multiple barcode images
+  const processBatchImages = async (files) => {
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, 15);
+    if (imageFiles.length === 0) return;
+
+    setBatchScanning(true);
+    setBatchProgress({ done: 0, total: imageFiles.length });
+
+    const results = [];
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i];
+      let barcode = null;
+
+      // Try native detector first
+      barcode = await tryNativeDetector(file);
+
+      // Try Quagga2
+      if (!barcode) {
+        try {
+          const imageUrls = await createImageUrls(file);
+          const sizes = [800, 1280, 1920];
+          const patchSizes = ['medium', 'large', 'small', 'x-large'];
+          for (const url of imageUrls) {
+            for (const size of sizes) {
+              for (const patchSize of patchSizes) {
+                barcode = await tryQuagga(url, size, patchSize);
+                if (barcode) break;
+              }
+              if (barcode) break;
+            }
+            if (barcode) break;
+          }
+        } catch { /* skip */ }
+      }
+
+      if (barcode) {
+        const matched = lookupBarcode(barcode);
+        const cat = getCategoryFromBarcode(barcode);
+        // Don't add duplicates within same batch
+        if (!results.find(r => r.barcode === barcode)) {
+          results.push({
+            barcode,
+            name: matched?.name || (cat === 'Singing Bowl' ? barcode : ''),
+            category: matched?.category || cat,
+            matched: !!matched,
+          });
+        }
+      }
+
+      setBatchProgress({ done: i + 1, total: imageFiles.length });
+    }
+
+    setBatchScanned(prev => {
+      const existing = prev.map(p => p.barcode);
+      const newItems = results.filter(r => !existing.includes(r.barcode));
+      return [...prev, ...newItems];
+    });
+    setBatchScanning(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const [batchAdding, setBatchAdding] = useState(false);
+  const [batchAddProgress, setBatchAddProgress] = useState({ done: 0, total: 0 });
+
+  const handleBatchAddAll = async () => {
+    const newItems = batchScanned.filter(item => !item.matched);
+    if (newItems.length === 0) return;
+
+    setBatchAdding(true);
+    setBatchAddProgress({ done: 0, total: newItems.length });
+
+    let added = 0;
+    for (let i = 0; i < newItems.length; i++) {
+      const item = newItems[i];
+      try {
+        await productsApi.create(api, {
+          name: item.name || item.barcode,
+          barcode: item.barcode,
+          category: item.category || null,
+        });
+        added++;
+      } catch {
+        // Skip items that fail (e.g. barcode already exists)
+      }
+      setBatchAddProgress({ done: i + 1, total: newItems.length });
+    }
+
+    setBatchAdding(false);
+    setBatchScanned([]);
+    setShowScanner(false);
+    fetchProducts();
+  };
+
+  const handleBatchEdit = (index) => {
+    const item = batchScanned[index];
+    const cat = item.category || getCategoryFromBarcode(item.barcode);
+    setForm({
+      name: item.name || (cat === 'Singing Bowl' ? item.barcode : ''),
+      description: '',
+      image_url: '',
+      image_url_2: '',
+      barcode: item.barcode,
+      cost_price: '',
+      retail_price: '',
+      wholesale_price: '',
+      category: cat,
+      weight: '',
+      size: '',
+    });
+    setImagePreview(null);
+    setImagePreview2(null);
+    setImageFile(null);
+    setImageFile2(null);
+    setEditingProduct(null);
+    setBatchEditIndex(index);
+    setShowScanner(false);
+    setShowForm(true);
+  };
+
+  const handleBatchBack = () => {
+    setBatchEditIndex(null);
+    setShowForm(false);
+    setShowScanner(true);
+    setScanMode('upload');
+  };
+
+  const handleBatchDelete = (index) => {
+    setBatchScanned(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) processImageFile(file);
+    const files = e.dataTransfer.files;
+    if (files.length > 1 && scanMode === 'upload') {
+      processBatchImages(files);
+    } else if (files[0]) {
+      processImageFile(files[0]);
+    }
   };
 
   const handleDragOver = (e) => {
@@ -528,7 +720,8 @@ export default function ProductsPage() {
 
   const handleManualBarcodeSubmit = () => {
     if (scannedBarcode.trim().length >= 1) {
-      handleScanComplete();
+      addBarcodeToBatch(scannedBarcode.trim());
+      setScannedBarcode('');
     }
   };
 
@@ -676,38 +869,40 @@ export default function ProductsPage() {
       {/* Barcode Scanner Modal */}
       {showScanner && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-            {/* Status Icon */}
-            <div className="text-center mb-5">
-              <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center transition-all duration-300 ${
-                scanStatus === 'done' ? 'bg-green-100' :
-                scanStatus === 'scanning' ? 'bg-amber-100 animate-pulse' :
-                'bg-gray-100'
-              }`}>
-                {scanStatus === 'done' ? (
-                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <svg className={`w-8 h-8 ${scanStatus === 'scanning' ? 'text-amber-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <rect x="2" y="4" width="20" height="16" rx="2" />
-                    <line x1="6" y1="8" x2="6" y2="16" />
-                    <line x1="9" y1="8" x2="9" y2="16" />
-                    <line x1="12" y1="8" x2="12" y2="16" />
-                    <line x1="15" y1="8" x2="15" y2="16" />
-                    <line x1="18" y1="8" x2="18" y2="16" />
-                  </svg>
-                )}
+          <div className={`bg-white rounded-2xl shadow-xl p-8 w-full ${batchScanned.length > 0 ? 'max-w-lg' : 'max-w-md'} transition-all`}>
+            {/* Status Icon — hide when batch results showing */}
+            {batchScanned.length === 0 && (
+              <div className="text-center mb-5">
+                <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center transition-all duration-300 ${
+                  scanStatus === 'done' ? 'bg-green-100' :
+                  scanStatus === 'scanning' ? 'bg-amber-100 animate-pulse' :
+                  'bg-gray-100'
+                }`}>
+                  {scanStatus === 'done' ? (
+                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg className={`w-8 h-8 ${scanStatus === 'scanning' ? 'text-amber-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <rect x="2" y="4" width="20" height="16" rx="2" />
+                      <line x1="6" y1="8" x2="6" y2="16" />
+                      <line x1="9" y1="8" x2="9" y2="16" />
+                      <line x1="12" y1="8" x2="12" y2="16" />
+                      <line x1="15" y1="8" x2="15" y2="16" />
+                      <line x1="18" y1="8" x2="18" y2="16" />
+                    </svg>
+                  )}
+                </div>
+                <h2 className="text-xl font-bold text-gray-800 mb-1">
+                  {scanStatus === 'done' ? 'Barcode Scanned!' :
+                   scanStatus === 'scanning' ? 'Scanning...' :
+                   'Scan Barcode'}
+                </h2>
               </div>
-              <h2 className="text-xl font-bold text-gray-800 mb-1">
-                {scanStatus === 'done' ? 'Barcode Scanned!' :
-                 scanStatus === 'scanning' ? 'Scanning...' :
-                 'Scan Barcode'}
-              </h2>
-            </div>
+            )}
 
             {/* Tabs: Device / Upload Image */}
-            {scanStatus !== 'done' && (
+            {!(batchScanned.length > 0 && !batchScanning) && (
               <div className="flex mb-5 bg-gray-100 rounded-[1.2rem] p-1">
                 <button
                   onClick={() => { setScanMode('device'); setUploadPreview(null); setUploadError(''); }}
@@ -739,169 +934,260 @@ export default function ProductsPage() {
             )}
 
             {/* Device Scan Mode */}
-            {scanMode === 'device' && scanStatus !== 'done' && (
-              <div className="text-center">
-                <p className="text-gray-500 text-sm mb-3">
-                  Point your USB/Bluetooth barcode scanner at the product or type manually
-                </p>
-                <input
-                  ref={scanInputRef}
-                  type="text"
-                  value={scannedBarcode}
-                  onChange={(e) => setScannedBarcode(e.target.value)}
-                  onKeyDown={handleScanKeyDown}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-[1.2rem] text-center text-lg font-mono tracking-wider focus:outline-none transition-colors"
-                  placeholder="Waiting for scan..."
-                  autoFocus
-                />
+            {scanMode === 'device' && (
+              <div>
+                <div className="mb-4">
+                  <p className="text-gray-500 text-sm mb-2 text-center">
+                    {batchScanned.length > 0 ? 'Keep scanning or type barcode manually' : 'Point your barcode scanner at the product or type manually'}
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      ref={scanInputRef}
+                      type="text"
+                      defaultValue=""
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const val = scanInputRef.current?.value?.trim().toUpperCase();
+                          if (val && val.length >= 1) {
+                            const matched = lookupBarcode(val);
+                            if (matched) {
+                              setShowScanner(false);
+                              setDuplicateProduct(matched);
+                              setDuplicateQty(1);
+                            } else {
+                              addBarcodeToBatch(val);
+                            }
+                            if (scanInputRef.current) scanInputRef.current.value = '';
+                          }
+                          scanBufferRef.current = '';
+                          lastKeyTimeRef.current = 0;
+                          return;
+                        }
+                      }}
+                      className="flex-1 px-4 py-2.5 border-2 border-gray-200 rounded-[1.2rem] text-center text-sm font-mono tracking-wider focus:outline-none transition-colors uppercase"
+                      placeholder="Waiting for scan..."
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = scanInputRef.current?.value?.trim().toUpperCase();
+                        if (val && val.length >= 1) {
+                          const matched = lookupBarcode(val);
+                          if (matched) {
+                            setShowScanner(false);
+                            setDuplicateProduct(matched);
+                            setDuplicateQty(1);
+                          } else {
+                            addBarcodeToBatch(val);
+                          }
+                          if (scanInputRef.current) scanInputRef.current.value = '';
+                        }
+                      }}
+                      className="px-4 py-2.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium text-sm transition-colors"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Batch results table — same as upload mode */}
+                {batchScanned.length > 0 && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-gray-700">{batchScanned.length} barcode{batchScanned.length > 1 ? 's' : ''} scanned</p>
+                    </div>
+                    <div className="overflow-y-auto max-h-[280px] rounded-xl border border-gray-200">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 sticky top-0">
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Product</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Barcode</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Category</th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {batchScanned.map((item, idx) => (
+                            <tr key={idx} className="border-t border-gray-100 hover:bg-amber-50/40">
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-1.5">
+                                  {item.matched && (
+                                    <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" title="Exists"></span>
+                                  )}
+                                  <span className={`truncate max-w-[100px] ${item.matched ? 'text-blue-700' : 'text-gray-800'}`}>
+                                    {item.name || '-'}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 font-mono text-xs text-gray-600">{item.barcode}</td>
+                              <td className="px-3 py-2 text-xs text-gray-500">{item.category || '-'}</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">
+                                <button
+                                  onClick={() => handleBatchEdit(idx)}
+                                  className="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleBatchDelete(idx)}
+                                  className="text-red-500 hover:text-red-700 text-xs font-medium"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {batchScanned.some(i => i.matched) && (
+                      <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
+                        <span className="w-2 h-2 bg-blue-500 rounded-full inline-block"></span>
+                        Already exists in products
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Upload Image Mode */}
-            {scanMode === 'upload' && scanStatus !== 'done' && (
-              <div className="text-center">
+            {/* Upload Image Mode — Batch scanning */}
+            {scanMode === 'upload' && (
+              <div>
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={handleImageUpload}
+                  multiple
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (files && files.length > 0) processBatchImages(files);
+                  }}
                   className="hidden"
                 />
 
-                {uploadPreview ? (
-                  <div className="mb-4">
-                    <img
-                      src={uploadPreview}
-                      alt="Uploaded barcode"
-                      className="max-h-48 mx-auto rounded-[1.2rem] border border-gray-200 object-contain"
-                    />
-                  </div>
-                ) : (
+                {/* Drop zone / upload area */}
+                {!batchScanning && (
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    onDrop={handleDrop}
+                    onDrop={(e) => { e.preventDefault(); setIsDragging(false); processBatchImages(e.dataTransfer.files); }}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
-                    className={`border-2 border-dashed rounded-[1.2rem] p-8 cursor-pointer transition-all duration-200 mb-4 ${
+                    className={`border-2 border-dashed rounded-[1.2rem] p-6 cursor-pointer transition-all duration-200 mb-4 ${
                       isDragging
                         ? 'border-amber-500 bg-amber-50 scale-[1.02]'
                         : 'border-gray-300 hover:border-amber-500 hover:bg-amber-50'
                     }`}
                   >
-                    <svg className={`w-10 h-10 mx-auto mb-3 transition-colors ${isDragging ? 'text-amber-500' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className={`w-8 h-8 mx-auto mb-2 transition-colors ${isDragging ? 'text-amber-500' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    <p className="text-sm text-gray-600 font-medium">
-                      {isDragging ? 'Drop image here' : 'Drag & drop or click to upload'}
+                    <p className="text-sm text-gray-600 font-medium text-center">
+                      {isDragging ? 'Drop images here' : 'Select or drag up to 15 barcode images'}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">Upload a photo of barcode or QR code</p>
+                    <p className="text-xs text-gray-400 mt-1 text-center">Upload photos of barcodes to scan in batch</p>
                   </div>
                 )}
 
-                {uploadError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-[1.2rem] text-sm text-red-600 mb-3">
-                    {uploadError}
+                {/* Scanning progress */}
+                {batchScanning && (
+                  <div className="text-center py-6 mb-4">
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-700 mx-auto mb-3"></div>
+                    <p className="text-sm text-gray-600 font-medium">Scanning {batchProgress.done} / {batchProgress.total}...</p>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-3 mx-auto max-w-[200px]">
+                      <div className="bg-amber-600 h-1.5 rounded-full transition-all" style={{ width: `${(batchProgress.done / batchProgress.total) * 100}%` }}></div>
+                    </div>
                   </div>
                 )}
 
-                {uploadPreview && scanStatus !== 'scanning' && (
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-sm text-amber-700 hover:text-amber-800 font-medium"
-                  >
-                    Try a different image
-                  </button>
+                {/* Batch results table */}
+                {batchScanned.length > 0 && !batchScanning && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-gray-700">{batchScanned.length} barcode{batchScanned.length > 1 ? 's' : ''} detected</p>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-xs text-amber-700 hover:text-amber-800 font-medium"
+                      >
+                        + Scan More
+                      </button>
+                    </div>
+                    <div className="overflow-y-auto max-h-[280px] rounded-xl border border-gray-200">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 sticky top-0">
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Product</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Barcode</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Category</th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {batchScanned.map((item, idx) => (
+                            <tr key={idx} className="border-t border-gray-100 hover:bg-amber-50/40">
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-1.5">
+                                  {item.matched && (
+                                    <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" title="Exists"></span>
+                                  )}
+                                  <span className={`truncate max-w-[100px] ${item.matched ? 'text-blue-700' : 'text-gray-800'}`}>
+                                    {item.name || '-'}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 font-mono text-xs text-gray-600">{item.barcode}</td>
+                              <td className="px-3 py-2 text-xs text-gray-500">{item.category || '-'}</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">
+                                <button
+                                  onClick={() => handleBatchEdit(idx)}
+                                  className="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleBatchDelete(idx)}
+                                  className="text-red-500 hover:text-red-700 text-xs font-medium"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {batchScanned.some(i => i.matched) && (
+                      <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
+                        <span className="w-2 h-2 bg-blue-500 rounded-full inline-block"></span>
+                        Already exists in products
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
 
-            {/* Scan Result */}
-            {scanStatus === 'done' && (
-              <div>
-                <div className="p-4 bg-green-50 rounded-[1.2rem] border border-green-200 mb-4 text-center">
-                  <p className="text-sm text-green-600 mb-1">Detected barcode</p>
-                  <p className="text-lg font-mono font-bold text-green-800">{scannedBarcode}</p>
-                </div>
-
-                {uploadPreview && (
-                  <img
-                    src={uploadPreview}
-                    alt="Scanned"
-                    className="max-h-32 mx-auto rounded-[1.2rem] border border-gray-200 object-contain mb-4"
-                  />
-                )}
-
-                {/* Product found — show info */}
-                {matchedProduct ? (
-                  <div className="p-4 bg-blue-50 rounded-[1.2rem] border border-blue-200 mb-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      <p className="text-sm font-semibold text-blue-800">Product Found!</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {matchedProduct.image_url ? (
-                        <img src={getImageUrl(matchedProduct.image_url)} alt={matchedProduct.name} className="w-14 h-14 rounded-[1.2rem] object-cover flex-shrink-0" />
-                      ) : (
-                        <div className="w-14 h-14 bg-blue-100 rounded-[1.2rem] flex items-center justify-center text-blue-400 text-xs flex-shrink-0">N/A</div>
-                      )}
-                      <div className="text-left min-w-0">
-                        <p className="font-bold text-gray-800 truncate">{matchedProduct.name}</p>
-                        <p className="text-xs text-gray-500 font-mono">{matchedProduct.barcode}</p>
-                        <div className="flex gap-3 mt-1 text-xs text-gray-600">
-                          <span>Retail: <strong>{parseFloat(matchedProduct.retail_price || 0).toFixed(2)}</strong></span>
-                          <span>Wholesale: <strong>{parseFloat(matchedProduct.wholesale_price || 0).toFixed(2)}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-3 bg-amber-50 rounded-[1.2rem] border border-amber-200 mb-4 text-center">
-                    <p className="text-sm text-amber-700">No existing product matches this barcode. You can use it to create a new product.</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Action Buttons */}
+            {/* Action Buttons — unified for both modes */}
             <div className="flex gap-3 mt-5">
-              {scanStatus === 'done' ? (
-                <>
-                  <button
-                    onClick={handleScanComplete}
-                    className="flex-1 py-2.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium transition-colors"
-                  >
-                    {matchedProduct ? 'Add Product' : 'Use This Barcode'}
-                  </button>
-                  <button
-                    onClick={() => { setScannedBarcode(''); setScanStatus('waiting'); setUploadPreview(null); setUploadError(''); setMatchedProduct(null); scanBufferRef.current = ''; if (scanMode === 'device') scanInputRef.current?.focus(); }}
-                    className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium transition-colors"
-                  >
-                    Scan Again
-                  </button>
-                </>
+              {batchAdding ? (
+                <div className="flex-1 py-2.5 bg-amber-700 text-white rounded-[1.2rem] font-medium text-center flex items-center justify-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                  Adding {batchAddProgress.done}/{batchAddProgress.total}...
+                </div>
               ) : (
                 <>
-                  {scanMode === 'device' && (
+                  {batchScanned.filter(i => !i.matched).length > 0 && !batchScanning && (
                     <button
-                      onClick={handleManualBarcodeSubmit}
-                      disabled={!scannedBarcode.trim()}
-                      className="flex-1 py-2.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium transition-colors disabled:opacity-40"
-                    >
-                      Use This Barcode
-                    </button>
-                  )}
-                  {scanMode === 'upload' && !uploadPreview && (
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={handleBatchAddAll}
                       className="flex-1 py-2.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium transition-colors"
                     >
-                      Choose Image
+                      Add {batchScanned.filter(i => !i.matched).length} Item{batchScanned.filter(i => !i.matched).length > 1 ? 's' : ''}
                     </button>
                   )}
                   <button
-                    onClick={() => { setShowScanner(false); setUploadPreview(null); }}
+                    onClick={() => { setShowScanner(false); setUploadPreview(null); setBatchScanned([]); }}
                     className="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium transition-colors"
                   >
                     {t('cancel')}
@@ -934,47 +1220,119 @@ export default function ProductsPage() {
             <form onSubmit={handleSubmit} className="space-y-3">
               {/* Row 1: Name + Upload Picture */}
               <div className="flex justify-between items-start">
-                <div className="flex-1 max-w-[65%]">
+                <div className="flex-1 max-w-[55%]">
                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('nameRequired')}</label>
                   <input
                     type="text"
                     value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    readOnly={form.category === 'Singing Bowl'}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      const autoCat = getCategoryFromBarcode(val);
+                      setForm((prev) => ({
+                        ...prev,
+                        name: val,
+                        ...(autoCat && !prev.category ? { category: autoCat } : {}),
+                      }));
+                    }}
                     required
-                    className={`w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none ${form.category === 'Singing Bowl' ? 'bg-gray-100 text-gray-500' : ''}`}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                     autoFocus
                   />
                 </div>
-                <div>
+                <div className="flex gap-1.5">
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     ref={productImageRef}
                     className="hidden"
                     onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        setImagePreview(URL.createObjectURL(file));
-                        setImageFile(file);
+                      const files = Array.from(e.target.files || []);
+                      if (files.length === 0) return;
+                      // If no image yet, fill slot 1 first, then slot 2
+                      if (!imagePreview && !imageFile) {
+                        setImagePreview(URL.createObjectURL(files[0]));
+                        setImageFile(files[0]);
+                        if (files[1]) {
+                          setImagePreview2(URL.createObjectURL(files[1]));
+                          setImageFile2(files[1]);
+                        }
+                      } else if (!imagePreview2 && !imageFile2) {
+                        // Slot 1 filled, fill slot 2
+                        setImagePreview2(URL.createObjectURL(files[0]));
+                        setImageFile2(files[0]);
+                      } else {
+                        // Both filled — replace both
+                        setImagePreview(URL.createObjectURL(files[0]));
+                        setImageFile(files[0]);
+                        if (files[1]) {
+                          setImagePreview2(URL.createObjectURL(files[1]));
+                          setImageFile2(files[1]);
+                        }
                       }
+                      e.target.value = '';
                     }}
                   />
-                  <button
-                    type="button"
-                    onClick={() => productImageRef.current?.click()}
-                    className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors overflow-hidden"
-                  >
-                    {imagePreview ? (
-                      <img src={imagePreview} alt="Preview" className="w-full h-full object-cover rounded-[1.2rem]" />
-                    ) : (
+                  {!imagePreview && !imagePreview2 ? (
+                    /* No images — single upload button */
+                    <button
+                      type="button"
+                      onClick={() => productImageRef.current?.click()}
+                      className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors"
+                    >
                       <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 15V3" />
                         <path d="M7 7l5-5 5 5" />
                         <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
                       </svg>
-                    )}
-                  </button>
+                    </button>
+                  ) : (
+                    /* At least one image — show thumbnails */
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => productImageRef.current?.click()}
+                        className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors overflow-hidden"
+                      >
+                        {imagePreview ? (
+                          <img src={imagePreview} alt="Preview 1" className="w-full h-full object-cover rounded-[1.2rem]" />
+                        ) : (
+                          <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 15V3" />
+                            <path d="M7 7l5-5 5 5" />
+                            <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                          </svg>
+                        )}
+                      </button>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        ref={productImageRef2}
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setImagePreview2(URL.createObjectURL(file));
+                            setImageFile2(file);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => productImageRef2.current?.click()}
+                        className={`${imagePreview2 ? 'w-20' : 'w-10'} h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-all overflow-hidden`}
+                      >
+                        {imagePreview2 ? (
+                          <img src={imagePreview2} alt="Preview 2" className="w-full h-full object-cover rounded-[1.2rem]" />
+                        ) : (
+                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
+                          </svg>
+                        )}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1000,7 +1358,7 @@ export default function ProductsPage() {
                         <li
                           key={option}
                           onClick={() => {
-                            setForm({ ...form, category: option, ...(option === 'Singing Bowl' ? { name: form.barcode } : {}) });
+                            setForm((prev) => ({ ...prev, category: option, ...(option === 'Singing Bowl' ? { name: prev.barcode } : {}) }));
                             setShowCategoryDropdown(false);
                           }}
                           className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors ${form.category === option ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
@@ -1017,10 +1375,16 @@ export default function ProductsPage() {
                     type="text"
                     value={form.barcode}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      setForm((prev) => ({ ...prev, barcode: val, ...(prev.category === 'Singing Bowl' ? { name: val } : {}) }));
+                      const val = e.target.value.toUpperCase();
+                      const autoCat = getCategoryFromBarcode(val);
+                      setForm((prev) => ({
+                        ...prev,
+                        barcode: val,
+                        ...(autoCat && !prev.category ? { category: autoCat, name: autoCat === 'Singing Bowl' ? val : prev.name } : {}),
+                        ...(prev.category === 'Singing Bowl' ? { name: val } : {}),
+                      }));
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none font-mono"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none font-mono uppercase"
                   />
                 </div>
               </div>
@@ -1030,21 +1394,21 @@ export default function ProductsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('description')}</label>
                 <textarea
                   value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
                   rows={2}
                   className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                 />
               </div>
 
-              {/* Row 4: Weight, Size */}
-              <div className={`grid ${form.category === 'Thanka' || form.category === 'Thanka Locket' ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
+              {/* Row 4: Weight, Size, Qty */}
+              <div className={`grid ${form.category === 'Thanka' || form.category === 'Thanka Locket' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
                 {form.category !== 'Thanka' && form.category !== 'Thanka Locket' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('weight')}</label>
                   <input
                     type="text"
                     value={form.weight}
-                    onChange={(e) => setForm({ ...form, weight: e.target.value })}
+                    onChange={(e) => setForm((prev) => ({ ...prev, weight: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                   />
                 </div>
@@ -1054,9 +1418,32 @@ export default function ProductsPage() {
                   <input
                     type="text"
                     value={form.size}
-                    onChange={(e) => setForm({ ...form, size: e.target.value })}
+                    onChange={(e) => setForm((prev) => ({ ...prev, size: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Qty</label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, quantity: Math.max(1, (parseInt(prev.quantity) || 1) - 1) }))}
+                      className="w-9 h-9 flex items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 text-lg font-bold"
+                    >-</button>
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.quantity}
+                      onChange={(e) => setForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                      onBlur={() => setForm((prev) => ({ ...prev, quantity: Math.max(1, parseInt(prev.quantity) || 1) }))}
+                      className="w-full px-2 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none text-center font-semibold"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, quantity: (parseInt(prev.quantity) || 1) + 1 }))}
+                      className="w-9 h-9 flex items-center justify-center rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 text-lg font-bold"
+                    >+</button>
+                  </div>
                 </div>
               </div>
 
@@ -1068,7 +1455,7 @@ export default function ProductsPage() {
                     type="number"
                     step="0.01"
                     value={form.cost_price}
-                    onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
+                    onChange={(e) => setForm((prev) => ({ ...prev, cost_price: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                   />
                 </div>
@@ -1078,7 +1465,7 @@ export default function ProductsPage() {
                     type="number"
                     step="0.01"
                     value={form.wholesale_price}
-                    onChange={(e) => setForm({ ...form, wholesale_price: e.target.value })}
+                    onChange={(e) => setForm((prev) => ({ ...prev, wholesale_price: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                   />
                 </div>
@@ -1088,25 +1475,45 @@ export default function ProductsPage() {
                     type="number"
                     step="0.01"
                     value={form.retail_price}
-                    onChange={(e) => setForm({ ...form, retail_price: e.target.value })}
+                    onChange={(e) => setForm((prev) => ({ ...prev, retail_price: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
                   />
                 </div>
               </div>
               <div className="flex gap-3 pt-2">
-                <button
-                  type="submit"
-                  className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
-                >
-                  {editingProduct ? t('update') : t('create')}
-                </button>
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
-                >
-                  {t('cancel')}
-                </button>
+                {batchEditIndex !== null ? (
+                  <>
+                    <button
+                      type="submit"
+                      className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
+                    >
+                      Save & Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBatchBack}
+                      className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
+                    >
+                      Back
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="submit"
+                      className="flex-1 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
+                    >
+                      {editingProduct ? t('update') : t('create')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium"
+                    >
+                      {t('cancel')}
+                    </button>
+                  </>
+                )}
               </div>
             </form>
           </div>
@@ -1127,7 +1534,9 @@ export default function ProductsPage() {
               if (catProducts.length === 0) return null;
               return (
                 <div key={cat}>
-                  <h2 className="text-lg font-bold text-gray-800 mb-3">{td(cat)}</h2>
+                  <h2 className="text-lg font-bold text-gray-800 mb-3">
+                    {td(cat)} <span className="text-sm font-bold text-gray-400 ml-2">&nbsp;| &nbsp; {catProducts.length} QTY</span>
+                  </h2>
                   <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
                     <table className="min-w-full border-separate border-spacing-0">
                       <thead>
@@ -1147,18 +1556,24 @@ export default function ProductsPage() {
                         {catProducts.map((p) => (
                           <tr key={p.id} className="transition-colors hover:bg-amber-50/60">
                             <td className="px-5 py-4 border-b border-gray-100">
-                              {p.image_url ? (
-                                <img
-                                  src={getImageUrl(p.image_url)}
-                                  alt={p.name}
-                                  className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                  onClick={() => setPreviewImage(getImageUrl(p.image_url))}
-                                />
-                              ) : (
-                                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">
-                                  N/A
-                                </div>
-                              )}
+                              {(() => {
+                                const imgs = [getImageUrl(p.image_url), getImageUrl(p.image_url_2)].filter(Boolean);
+                                return imgs.length > 0 ? (
+                                  <div className="relative w-10 h-10">
+                                    <img
+                                      src={imgs[0]}
+                                      alt={p.name}
+                                      className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                      onClick={() => setPreviewImages({ images: imgs, index: 0 })}
+                                    />
+                                    {imgs.length > 1 && (
+                                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">N/A</div>
+                                );
+                              })()}
                             </td>
                             <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{p.name}</td>
                             <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
@@ -1186,7 +1601,9 @@ export default function ProductsPage() {
             if (filterCategory || uncategorized.length === 0) return null;
             return (
               <div>
-                <h2 className="text-lg font-bold text-gray-800 mb-3">{t('other')}</h2>
+                <h2 className="text-lg font-bold text-gray-800 mb-3">
+                  {t('other')} <span className="text-sm font-bold text-gray-400 ml-2">&nbsp;| &nbsp; {uncategorized.length} QTY</span>
+                </h2>
                 <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
                   <table className="min-w-full border-separate border-spacing-0">
                     <thead>
@@ -1206,18 +1623,24 @@ export default function ProductsPage() {
                       {uncategorized.map((p) => (
                         <tr key={p.id} className="transition-colors hover:bg-amber-50/60">
                           <td className="px-5 py-4 border-b border-gray-100">
-                            {p.image_url ? (
-                              <img
-                                src={getImageUrl(p.image_url)}
-                                alt={p.name}
-                                className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                onClick={() => setPreviewImage(getImageUrl(p.image_url))}
-                              />
-                            ) : (
-                              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">
-                                N/A
-                              </div>
-                            )}
+                            {(() => {
+                              const imgs = [getImageUrl(p.image_url), getImageUrl(p.image_url_2)].filter(Boolean);
+                              return imgs.length > 0 ? (
+                                <div className="relative w-10 h-10">
+                                  <img
+                                    src={imgs[0]}
+                                    alt={p.name}
+                                    className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                                    onClick={() => setPreviewImages({ images: imgs, index: 0 })}
+                                  />
+                                  {imgs.length > 1 && (
+                                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">N/A</div>
+                              );
+                            })()}
                           </td>
                           <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{p.name}</td>
                           <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
@@ -1422,22 +1845,52 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Image Preview Popup */}
-      {previewImage && (
+      {/* Image Preview Popup with prev/next */}
+      {previewImages && (
         <div
           className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-          onClick={() => setPreviewImage(null)}
+          onClick={() => setPreviewImages(null)}
         >
-          <div className="relative max-w-lg max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+          <div className="relative max-w-lg max-h-[80vh] flex items-center" onClick={(e) => e.stopPropagation()}>
             <button
-              onClick={() => setPreviewImage(null)}
-              className="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900"
+              onClick={() => setPreviewImages(null)}
+              className="absolute -top-3 -right-3 z-10 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            <img src={previewImage} alt="Product" className="max-w-full max-h-[80vh] object-contain rounded-[1.2rem]" />
+            {/* Previous button */}
+            {previewImages.images.length > 1 && (
+              <button
+                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index - 1 + previewImages.images.length) % previewImages.images.length })}
+                className="absolute -left-12 w-9 h-9 bg-white/90 rounded-full shadow-lg flex items-center justify-center text-gray-700 hover:bg-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+            <img src={previewImages.images[previewImages.index]} alt="Product" className="max-w-full max-h-[80vh] object-contain rounded-[1.2rem]" />
+            {/* Next button */}
+            {previewImages.images.length > 1 && (
+              <button
+                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index + 1) % previewImages.images.length })}
+                className="absolute -right-12 w-9 h-9 bg-white/90 rounded-full shadow-lg flex items-center justify-center text-gray-700 hover:bg-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+            {/* Dot indicators */}
+            {previewImages.images.length > 1 && (
+              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {previewImages.images.map((_, i) => (
+                  <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === previewImages.index ? 'bg-white' : 'bg-white/40'}`} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

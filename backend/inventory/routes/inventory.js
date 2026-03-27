@@ -24,7 +24,7 @@ router.get('/', authenticate, async (req, res) => {
           { model: Product, as: 'product' },
           { model: Location, as: 'location' },
         ],
-        order: [['createdAt', 'DESC']],
+        order: [[{ model: Product, as: 'product' }, 'name', 'ASC']],
       }),
       Location.findOne({ where: { name: 'Guangzhou Warehouse' } }),
     ]);

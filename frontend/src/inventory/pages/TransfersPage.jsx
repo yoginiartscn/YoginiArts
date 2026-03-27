@@ -21,7 +21,7 @@ export default function TransfersPage() {
   const [addingProduct, setAddingProduct] = useState(false);
   const [addForm, setAddForm] = useState({ product_id: '', quantity: 1 });
 
-  const [previewImage, setPreviewImage] = useState(null);
+  const [previewImages, setPreviewImages] = useState(null);
 
   // Transfer records filter
   const [showRecordsFilter, setShowRecordsFilter] = useState(false);
@@ -51,15 +51,18 @@ export default function TransfersPage() {
   // Add Product form (same as ProductsPage)
   const [showProductForm, setShowProductForm] = useState(false);
   const [productForm, setProductForm] = useState({
-    name: '', description: '', image_url: '', barcode: '',
+    name: '', description: '', image_url: '', image_url_2: '', barcode: '',
     cost_price: '', retail_price: '', wholesale_price: '',
     category: '', weight: '', size: '',
   });
   const [imagePreview, setImagePreview] = useState(null);
+  const [imagePreview2, setImagePreview2] = useState(null);
   const [imageFile, setImageFile] = useState(null);
+  const [imageFile2, setImageFile2] = useState(null);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const categoryOptions = ['Singing Bowl', 'Thanka', 'Jewelleries', 'Thanka Locket'];
   const productImageRef = useRef(null);
+  const productImageRef2 = useRef(null);
   const recordsDropdownRef = useRef(null);
 
   // Custom location dropdown state
@@ -147,6 +150,7 @@ export default function TransfersPage() {
         product_name: product.name,
         product_barcode: product.barcode,
         product_image: product.image_url,
+        product_image_2: product.image_url_2,
         product_weight: product.weight,
         quantity: 1,
       }]);
@@ -321,6 +325,7 @@ export default function TransfersPage() {
         product_name: product.name,
         product_barcode: product.barcode,
         product_image: product.image_url,
+        product_image_2: product.image_url_2,
         product_weight: product.weight,
         quantity: parseInt(addForm.quantity),
       }]);
@@ -376,27 +381,32 @@ export default function TransfersPage() {
 
   // Add Product form handlers
   const resetProductForm = () => {
-    setProductForm({ name: '', description: '', image_url: '', barcode: '', cost_price: '', retail_price: '', wholesale_price: '', category: '', weight: '', size: '' });
+    setProductForm({ name: '', description: '', image_url: '', image_url_2: '', barcode: '', cost_price: '', retail_price: '', wholesale_price: '', category: '', weight: '', size: '' });
     setImagePreview(null);
+    setImagePreview2(null);
     setImageFile(null);
+    setImageFile2(null);
     setShowProductForm(false);
   };
 
   const handleOpenAddProduct = () => {
     setShowNotFound(false);
     setProductForm({
-      name: '', description: '', image_url: '', barcode: notFoundBarcode,
+      name: '', description: '', image_url: '', image_url_2: '', barcode: notFoundBarcode,
       cost_price: '', retail_price: '', wholesale_price: '',
       category: getCategoryFromBarcode(notFoundBarcode), weight: '', size: '',
     });
     setImagePreview(null);
+    setImagePreview2(null);
+    setImageFile(null);
+    setImageFile2(null);
     setShowProductForm(true);
   };
 
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     try {
-      await productsApi.create(api, productForm, imageFile);
+      await productsApi.create(api, productForm, imageFile, imageFile2);
       resetProductForm();
       // Refresh products list
       const res = await productsApi.getAll(api);
@@ -433,6 +443,7 @@ export default function TransfersPage() {
               product_name: matched.name,
               product_barcode: matched.barcode,
               product_image: matched.image_url,
+              product_image_2: matched.image_url_2,
               product_weight: matched.weight,
               quantity: 1,
             }]);
@@ -646,13 +657,19 @@ export default function TransfersPage() {
                     return (
                       <tr key={item.product_id} className="transition-colors hover:bg-amber-50/60">
                         <td className="px-5 py-4 border-b border-gray-100">
-                          {item.product_image ? (
-                            <img src={getImageUrl(item.product_image)} alt={item.product_name} className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setPreviewImage(getImageUrl(item.product_image))} />
-                          ) : (
-                            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">
-                              N/A
-                            </div>
-                          )}
+                          {(() => {
+                            const imgs = [getImageUrl(item.product_image), getImageUrl(item.product_image_2)].filter(Boolean);
+                            return imgs.length > 0 ? (
+                              <div className="relative w-10 h-10">
+                                <img src={imgs[0]} alt={item.product_name} className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setPreviewImages({ images: imgs, index: 0 })} />
+                                {imgs.length > 1 && (
+                                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">N/A</div>
+                            );
+                          })()}
                         </td>
                         <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{item.product_name}</td>
                         <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{item.product_barcode || '-'}</td>
@@ -1137,34 +1154,96 @@ export default function TransfersPage() {
                   />
                 </div>
                 <div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    ref={productImageRef}
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        setImagePreview(URL.createObjectURL(file));
-                        setImageFile(file);
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => productImageRef.current?.click()}
-                    className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors overflow-hidden"
-                  >
-                    {imagePreview ? (
-                      <img src={imagePreview} alt="Preview" className="w-full h-full object-cover rounded-[1.2rem]" />
+                  <div className="flex gap-1.5">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      ref={productImageRef}
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length === 0) return;
+                        if (!imagePreview && !imageFile) {
+                          setImagePreview(URL.createObjectURL(files[0]));
+                          setImageFile(files[0]);
+                          if (files[1]) {
+                            setImagePreview2(URL.createObjectURL(files[1]));
+                            setImageFile2(files[1]);
+                          }
+                        } else if (!imagePreview2 && !imageFile2) {
+                          setImagePreview2(URL.createObjectURL(files[0]));
+                          setImageFile2(files[0]);
+                        } else {
+                          setImagePreview(URL.createObjectURL(files[0]));
+                          setImageFile(files[0]);
+                          if (files[1]) {
+                            setImagePreview2(URL.createObjectURL(files[1]));
+                            setImageFile2(files[1]);
+                          }
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                    {!imagePreview && !imagePreview2 ? (
+                      <button
+                        type="button"
+                        onClick={() => productImageRef.current?.click()}
+                        className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors"
+                      >
+                        <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 15V3" />
+                          <path d="M7 7l5-5 5 5" />
+                          <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                        </svg>
+                      </button>
                     ) : (
-                      <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 15V3" />
-                        <path d="M7 7l5-5 5 5" />
-                        <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
-                      </svg>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => productImageRef.current?.click()}
+                          className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors overflow-hidden"
+                        >
+                          {imagePreview ? (
+                            <img src={imagePreview} alt="Preview 1" className="w-full h-full object-cover rounded-[1.2rem]" />
+                          ) : (
+                            <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 15V3" />
+                              <path d="M7 7l5-5 5 5" />
+                              <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                            </svg>
+                          )}
+                        </button>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          ref={productImageRef2}
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setImagePreview2(URL.createObjectURL(file));
+                              setImageFile2(file);
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => productImageRef2.current?.click()}
+                          className={`${imagePreview2 ? 'w-20' : 'w-10'} h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-all overflow-hidden`}
+                        >
+                          {imagePreview2 ? (
+                            <img src={imagePreview2} alt="Preview 2" className="w-full h-full object-cover rounded-[1.2rem]" />
+                          ) : (
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
+                            </svg>
+                          )}
+                        </button>
+                      </>
                     )}
-                  </button>
+                  </div>
                 </div>
               </div>
 
@@ -1326,11 +1405,19 @@ export default function TransfersPage() {
               {transfers.map((tx) => (
                 <tr key={tx.id} className="transition-colors hover:bg-amber-50/60">
                   <td className="px-5 py-4 border-b border-gray-100">
-                    {tx.product?.image_url ? (
-                      <img src={getImageUrl(tx.product.image_url)} alt={tx.product.name} className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setPreviewImage(getImageUrl(tx.product.image_url))} />
-                    ) : (
-                      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">N/A</div>
-                    )}
+                    {(() => {
+                      const imgs = [getImageUrl(tx.product?.image_url), getImageUrl(tx.product?.image_url_2)].filter(Boolean);
+                      return imgs.length > 0 ? (
+                        <div className="relative w-10 h-10">
+                          <img src={imgs[0]} alt={tx.product?.name} className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setPreviewImages({ images: imgs, index: 0 })} />
+                          {imgs.length > 1 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">N/A</div>
+                      );
+                    })()}
                   </td>
                   <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{tx.product?.name || '-'}</td>
                   <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{tx.product?.barcode || '-'}</td>
@@ -1449,13 +1536,50 @@ export default function TransfersPage() {
         </div>
       )}
 
-      {/* Image Preview Popup */}
-      {previewImage && (
+      {/* Image Preview Popup with prev/next */}
+      {previewImages && (
         <div
-          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 cursor-pointer"
-          onClick={() => setPreviewImage(null)}
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => setPreviewImages(null)}
         >
-          <img src={previewImage} alt="Product" className="max-w-full max-h-[80vh] object-contain rounded-[1.2rem]" />
+          <div className="relative max-w-lg max-h-[80vh] flex items-center" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setPreviewImages(null)}
+              className="absolute -top-3 -right-3 z-10 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            {previewImages.images.length > 1 && (
+              <button
+                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index - 1 + previewImages.images.length) % previewImages.images.length })}
+                className="absolute -left-12 w-9 h-9 bg-white/90 rounded-full shadow-lg flex items-center justify-center text-gray-700 hover:bg-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+            <img src={previewImages.images[previewImages.index]} alt="Product" className="max-w-full max-h-[80vh] object-contain rounded-[1.2rem]" />
+            {previewImages.images.length > 1 && (
+              <button
+                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index + 1) % previewImages.images.length })}
+                className="absolute -right-12 w-9 h-9 bg-white/90 rounded-full shadow-lg flex items-center justify-center text-gray-700 hover:bg-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+            {previewImages.images.length > 1 && (
+              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5">
+                {previewImages.images.map((_, i) => (
+                  <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === previewImages.index ? 'bg-white' : 'bg-white/40'}`} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
