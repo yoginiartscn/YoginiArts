@@ -35,8 +35,6 @@ export default function ProductsPage() {
   const [showSearch, setShowSearch] = useState(false);
   const searchInputRef = useRef(null);
   const [filterCategory, setFilterCategory] = useState('');
-  const [filterOpen, setFilterOpen] = useState(false);
-  const filterRef = useRef(null);
 
   // Quotation download
   const [showQuotation, setShowQuotation] = useState(false);
@@ -144,10 +142,11 @@ export default function ProductsPage() {
       return;
     }
     try {
+      const submitData = { ...form, quantity: Math.max(1, parseInt(form.quantity) || 1) };
       if (editingProduct) {
-        await productsApi.update(api, editingProduct.id, form, imageFile, imageFile2);
+        await productsApi.update(api, editingProduct.id, submitData, imageFile, imageFile2);
       } else {
-        await productsApi.create(api, form, imageFile, imageFile2);
+        await productsApi.create(api, submitData, imageFile, imageFile2);
       }
       resetForm();
       fetchProducts();
@@ -649,7 +648,7 @@ export default function ProductsPage() {
       setForm({
         ...form,
         barcode: scannedBarcode,
-        name: cat === 'Singing Bowl' ? scannedBarcode : '',
+        name: scannedBarcode,
         category: cat,
       });
       setShowForm(true);
@@ -674,15 +673,6 @@ export default function ProductsPage() {
     }
   };
 
-  // Close filter dropdown on outside click
-  useEffect(() => {
-    if (!filterOpen) return;
-    const handleClick = (e) => {
-      if (filterRef.current && !filterRef.current.contains(e.target)) setFilterOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [filterOpen]);
 
   // Close quotation dropdowns on outside click
   useEffect(() => {
@@ -768,38 +758,6 @@ export default function ProductsPage() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none text-sm"
               />
             </div>
-          </div>
-          {/* Filter dropdown */}
-          <div className="relative" ref={filterRef}>
-            <button
-              onClick={() => setFilterOpen(!filterOpen)}
-              className={`w-10 h-10 flex items-center justify-center rounded-[1.2rem] ${filterCategory ? 'bg-amber-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'} transition-colors flex-shrink-0`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-            </button>
-            {filterOpen && (
-              <div className="absolute right-0 z-10 mt-1 w-48 bg-white border border-gray-300 rounded-[1.2rem] shadow-lg overflow-hidden">
-                <ul>
-                  <li
-                    onClick={() => { setFilterCategory(''); setFilterOpen(false); }}
-                    className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${!filterCategory ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
-                  >
-                    {t('allCategories')}
-                  </li>
-                  {['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].map((cat) => (
-                    <li
-                      key={cat}
-                      onClick={() => { setFilterCategory(cat); setFilterOpen(false); }}
-                      className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${filterCategory === cat ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
-                    >
-                      {cat}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
           </div>
           <button
             onClick={() => { resetForm(); setShowAddChoice(true); }}
@@ -1382,8 +1340,8 @@ export default function ProductsPage() {
                       setForm((prev) => ({
                         ...prev,
                         barcode: val,
-                        ...(autoCat ? { category: autoCat, name: autoCat === 'Singing Bowl' ? val : prev.name } : {}),
-                        ...(prev.category === 'Singing Bowl' && !autoCat ? { name: val } : {}),
+                        name: val,
+                        ...(autoCat ? { category: autoCat } : {}),
                       }));
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none font-mono uppercase"
@@ -1522,6 +1480,37 @@ export default function ProductsPage() {
         </div>
       )}
 
+      {/* Category filter tabs */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {(() => {
+          const cats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries', 'Others'];
+          return cats.map(cat => {
+            const isOthers = cat === 'Others';
+            const catProducts = products.filter(p => {
+              const pCat = p.category;
+              if (isOthers) return !pCat || !['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].includes(pCat);
+              return pCat === cat;
+            });
+            const totalQty = catProducts.length;
+            if (totalQty === 0 && filterCategory !== cat) return null;
+            const isActive = filterCategory === cat;
+            return (
+              <button
+                key={cat}
+                onClick={() => setFilterCategory(isActive ? '' : cat)}
+                className={`px-3 py-1.5 rounded-[1.2rem] text-sm font-medium transition-all border ${
+                  isActive
+                    ? 'bg-amber-800 text-white border-amber-800'
+                    : 'bg-white text-amber-800 border-gray-200 hover:border-amber-300'
+                }`}
+              >
+                {td(cat)} <span className="font-bold ml-1">| &nbsp;{totalQty} QTY</span>
+              </button>
+            );
+          });
+        })()}
+      </div>
+
       {/* Products Tables — grouped by category */}
       {loading ? (
         <div className="flex justify-center py-12">
@@ -1600,7 +1589,7 @@ export default function ProductsPage() {
           {/* Uncategorized products */}
           {(() => {
             const uncategorized = products.filter((p) => !p.category || !['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].includes(p.category));
-            if (filterCategory || uncategorized.length === 0) return null;
+            if ((filterCategory && filterCategory !== 'Others') || uncategorized.length === 0) return null;
             return (
               <div>
                 <h2 className="text-lg font-bold text-gray-800 mb-3">

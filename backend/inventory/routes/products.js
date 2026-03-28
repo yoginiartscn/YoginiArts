@@ -74,7 +74,9 @@ router.post('/', authenticate, optionalUpload([{ name: 'image', maxCount: 1 }, {
   try {
     const { name, description, image_url, image_url_2, barcode, cost_price, retail_price, wholesale_price, category, weight, size } = req.body;
 
-    const qty = Math.max(1, parseInt(req.body.quantity) || 1);
+    const rawQty = req.body.quantity;
+    const qty = Math.max(1, Number(rawQty) || 1);
+    console.log('[Create Product] quantity received:', rawQty, '→ parsed:', qty);
 
     if (!name) {
       return res.status(400).json({ success: false, message: 'Product name is required' });
@@ -198,15 +200,39 @@ router.put('/:id', authenticate, optionalUpload([{ name: 'image', maxCount: 1 },
     });
 
     // Update inventory quantity if provided
-    const newQty = parseInt(req.body.quantity);
+    const newQty = Number(req.body.quantity);
+    console.log('[Update Product] quantity received:', req.body.quantity, '→ parsed:', newQty);
     if (!isNaN(newQty) && newQty >= 0) {
       const invRecords = await Inventory.findAll({ where: { product_id: product.id } });
       const currentTotal = invRecords.reduce((sum, inv) => sum + inv.quantity, 0);
       const diff = newQty - currentTotal;
-      if (diff !== 0 && invRecords.length > 0) {
-        // Apply diff to the first location (usually Guangzhou Warehouse)
-        const primary = invRecords[0];
-        await primary.update({ quantity: Math.max(0, primary.quantity + diff) });
+      console.log('[Update Product] currentTotal:', currentTotal, 'newQty:', newQty, 'diff:', diff);
+      if (diff !== 0) {
+        // Find Guangzhou Warehouse as the primary location
+        let guangzhou = await Location.findOne({ where: { name: 'Guangzhou Warehouse' } });
+        if (!guangzhou) {
+          guangzhou = await Location.create({ name: 'Guangzhou Warehouse', type: 'warehouse' });
+        }
+
+        // Find or create inventory record at Guangzhou Warehouse
+        const [gzInv] = await Inventory.findOrCreate({
+          where: { product_id: product.id, location_id: guangzhou.id },
+          defaults: { quantity: 0 },
+        });
+
+        await gzInv.update({ quantity: Math.max(0, gzInv.quantity + diff) });
+
+        // Log the transaction
+        const { Transaction } = require('../models');
+        await Transaction.create({
+          type: diff > 0 ? 'stock_in' : 'stock_out',
+          product_id: product.id,
+          [diff > 0 ? 'to_location_id' : 'from_location_id']: guangzhou.id,
+          quantity: Math.abs(diff),
+          notes: `Quantity updated from product edit (${currentTotal} → ${newQty})`,
+          created_by: req.user?.id || null,
+        });
+
         cache.invalidate('inventory');
         cache.invalidate('summary');
       }
