@@ -632,8 +632,10 @@ export default function ProductsPage() {
   const getCategoryFromBarcode = (barcode) => {
     if (!barcode) return '';
     const upper = barcode.toUpperCase();
-    if (upper.includes('SB')) return 'Singing Bowl';
-    if (upper.includes('YA')) return 'Thanka';
+    if (upper.startsWith('SB')) return 'Singing Bowl';
+    if (upper.startsWith('YA')) return 'Thanka';
+    if (upper.startsWith('MA')) return 'Jewelleries';
+    if (upper.startsWith('TL')) return 'Thanka Locket';
     return '';
   };
 
@@ -1380,8 +1382,8 @@ export default function ProductsPage() {
                       setForm((prev) => ({
                         ...prev,
                         barcode: val,
-                        ...(autoCat && !prev.category ? { category: autoCat, name: autoCat === 'Singing Bowl' ? val : prev.name } : {}),
-                        ...(prev.category === 'Singing Bowl' ? { name: val } : {}),
+                        ...(autoCat ? { category: autoCat, name: autoCat === 'Singing Bowl' ? val : prev.name } : {}),
+                        ...(prev.category === 'Singing Bowl' && !autoCat ? { name: val } : {}),
                       }));
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none font-mono uppercase"
