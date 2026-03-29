@@ -17,8 +17,9 @@ const router = express.Router();
 const TEMPLATES_DIR_PROD = path.join(__dirname, '..', '..', '..', 'dist', 'Excels Templates');
 const TEMPLATES_DIR_DEV = path.join(__dirname, '..', '..', '..', 'frontend', 'public', 'Excels Templates');
 const TEMPLATES_DIR = fs.existsSync(TEMPLATES_DIR_DEV) ? TEMPLATES_DIR_DEV : TEMPLATES_DIR_PROD;
-const IMG_FIT = 150;        // px — larger dimension scaled to this
-const IMG_COL_WIDTH = 40;   // Excel column width (chars) for image column (fits two images side by side)
+const IMG_FIT = 150;        // px — larger dimension scaled to this (for non-quotation exports)
+const IMG_COL_WIDTH = 40;   // Excel column width (chars) for image column
+const QUOTATION_IMG_MAX = 120; // px — max dimension for quotation images
 
 const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF720E20' } };
 const headerFont = { size: 13, color: { theme: 0 }, name: 'Arial', bold: true };
@@ -32,13 +33,20 @@ const thinBorder = {
   right: { style: 'thin' },
 };
 
-// ─── embedImages helper — place 1 or 2 images side-by-side in a single cell ──
-async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex) {
-  const urls = [imageUrl1, imageUrl2].filter(Boolean);
+// ─── embedImages helper — place 1 or 2 images in a cell ──────────────────────
+// options.singleImage: if true, only show first image (for quotation exports)
+// options.maxSize: max pixel dimension (default IMG_FIT)
+// Uses tl+br anchoring so the image is pinned exactly to cell boundaries.
+// Excel row height is in points (1pt ≈ 1.333px at 96 DPI).
+async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex, options = {}) {
+  const singleImage = options.singleImage || false;
+  const maxSize = options.maxSize || IMG_FIT;
+
+  const allUrls = [imageUrl1, imageUrl2].filter(Boolean);
+  const urls = singleImage ? allUrls.slice(0, 1) : allUrls;
   if (urls.length === 0) return { hasImage: false, imgHeight: 0 };
 
-  const cellWidthPx = IMG_COL_WIDTH * 7.5;   // total cell width in px
-  const cellHeightPx = IMG_FIT + 10;
+  const cellWidthPx = IMG_COL_WIDTH * 7.5;
   let maxH = 0;
 
   for (let i = 0; i < urls.length; i++) {
@@ -48,15 +56,29 @@ async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex)
       const ext = path.extname(urls[i].split('?')[0]).replace('.', '').toLowerCase() || 'jpeg';
       const dimensions = imageSize(imgBuffer);
 
-      // Scale image: if two images, each gets half the cell width
-      const slotWidth = urls.length === 1 ? cellWidthPx : cellWidthPx / 2;
-      const maxImgW = slotWidth - 8;  // 4px padding each side
-      const maxImgH = IMG_FIT;
-      const scaleW = maxImgW / dimensions.width;
-      const scaleH = maxImgH / dimensions.height;
-      const scale = Math.min(scaleW, scaleH, 1); // don't upscale
-      const w = Math.round(dimensions.width * scale);
-      const h = Math.round(dimensions.height * scale);
+      let w, h;
+      if (singleImage) {
+        // Quotation: vertical => constrain height, horizontal => constrain width
+        const isVertical = dimensions.height >= dimensions.width;
+        if (isVertical) {
+          const scale = Math.min(maxSize / dimensions.height, 1);
+          w = Math.round(dimensions.width * scale);
+          h = maxSize; // exactly maxSize for vertical
+        } else {
+          const scale = Math.min(maxSize / dimensions.width, 1);
+          w = maxSize; // exactly maxSize for horizontal
+          h = Math.round(dimensions.height * scale);
+        }
+      } else {
+        const slotWidth = urls.length === 1 ? cellWidthPx : cellWidthPx / 2;
+        const maxImgW = slotWidth - 8;
+        const scaleW = maxImgW / dimensions.width;
+        const scaleH = maxSize / dimensions.height;
+        const scale = Math.min(scaleW, scaleH, 1);
+        w = Math.round(dimensions.width * scale);
+        h = Math.round(dimensions.height * scale);
+      }
+
       if (h > maxH) maxH = h;
 
       const imgId = workbook.addImage({
@@ -64,23 +86,41 @@ async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex)
         extension: ext === 'jpg' ? 'jpeg' : ext,
       });
 
-      // Horizontal offset: image i goes in the i-th slot
-      const slotStartX = i * slotWidth;
-      const padX = slotStartX + Math.max(0, (slotWidth - w) / 2);
-      const padY = Math.max(0, (cellHeightPx - h) / 2);
+      // Use tl+br cell anchoring so image fits exactly in the cell
       const c = Math.floor(col);
+      // nativeColOff/nativeRowOff are in EMUs (914400 EMU = 1 inch = 96px at 96dpi)
+      // So 1px = 914400/96 = 9525 EMU
+      const PX_TO_EMU = 9525;
+      const padXEmu = Math.round(Math.max(0, (cellWidthPx - w) / 2) * PX_TO_EMU);
+      const imgWEmu = Math.round(w * PX_TO_EMU);
+      const imgHEmu = Math.round(h * PX_TO_EMU);
+      const padYEmu = Math.round(2 * PX_TO_EMU); // 2px top padding
 
-      sheet.addImage(imgId, {
-        tl: { col: c + padX / cellWidthPx, row: rowIndex + padY / cellHeightPx },
-        ext: { width: w, height: h },
-      });
-    } catch {
-      // skip failed image
+      if (singleImage) {
+        sheet.addImage(imgId, {
+          tl: { col: c, row: rowIndex, nativeCol: c, nativeRow: rowIndex, nativeColOff: padXEmu, nativeRowOff: padYEmu },
+          br: { col: c, row: rowIndex, nativeCol: c, nativeRow: rowIndex, nativeColOff: padXEmu + imgWEmu, nativeRowOff: padYEmu + imgHEmu },
+        });
+      } else {
+        const slotWidth = urls.length === 1 ? cellWidthPx : cellWidthPx / 2;
+        const slotStartX = i * slotWidth;
+        const slotPadX = Math.round((slotStartX + Math.max(0, (slotWidth - w) / 2)) * PX_TO_EMU);
+        const cellH = IMG_FIT;
+        const padY2 = Math.round(Math.max(0, (cellH - h) / 2) * PX_TO_EMU);
+        sheet.addImage(imgId, {
+          tl: { col: c, row: rowIndex, nativeCol: c, nativeRow: rowIndex, nativeColOff: slotPadX, nativeRowOff: padY2 },
+          br: { col: c, row: rowIndex, nativeCol: c, nativeRow: rowIndex, nativeColOff: slotPadX + imgWEmu, nativeRowOff: padY2 + imgHEmu },
+        });
+      }
+    } catch (err) {
+      console.error('embedImages error:', err?.message || err);
     }
   }
 
   if (maxH === 0) return { hasImage: false, imgHeight: 0 };
-  const rowHeightPts = Math.round(cellHeightPx / 1.33);
+  // Row height in points = px * 0.75  (1pt = 1.333px)
+  // Add 4px padding (2 top + 2 bottom)
+  const rowHeightPts = Math.round((maxH + 4) * 0.75);
   return { hasImage: true, imgHeight: rowHeightPts };
 }
 
@@ -235,7 +275,7 @@ router.get('/summary', authenticate, async (req, res) => {
 // ─── GET /export/quotation — Product List using SingingBowlTemplates.xlsx ──────
 router.get('/export/quotation', authenticate, async (req, res) => {
   try {
-    const { category, price_type = 'retail_price' } = req.query;
+    const { category, price_type = 'retail_price', location_id } = req.query;
 
     const priceLabels = {
       cost_price: 'Cost Price / 成本价',
@@ -286,29 +326,25 @@ router.get('/export/quotation', authenticate, async (req, res) => {
 
     const workbook = new ExcelJS.Workbook();
 
-    for (const cat of categoriesToExport) {
-      const products = await Product.findAll({ where: { category: cat }, order: [['createdAt', 'DESC']] });
-      if (products.length === 0 && !category) continue;
+    // If location_id provided, get product IDs at that location
+    let locationProductIds = null;
+    if (location_id) {
+      const invRecords = await Inventory.findAll({ where: { location_id, quantity: { [Op.gt]: 0 } }, attributes: ['product_id'] });
+      locationProductIds = new Set(invRecords.map(r => r.product_id));
+    }
 
-      const sheet = workbook.addWorksheet(cat);
-      const startRow = 4;
-
-      // Copy logo image from template
+    // Helper to set up a sheet with logo and headers
+    const setupSheet = (sheet) => {
       if (logoImgBuffer) {
         const logoId = workbook.addImage({ buffer: logoImgBuffer, extension: logoImgExt });
-        // Position matching the template: col 2, rows 0-1
         sheet.addImage(logoId, {
-          tl: { col: 2, row: 0, nativeColOff: 217712, nativeRowOff: 81644 },
-          br: { col: 2, row: 1, nativeColOff: 2496589, nativeRowOff: 424544 },
+          tl: { col: 2, row: 0, nativeCol: 2, nativeRow: 0, nativeColOff: 217712, nativeRowOff: 81644 },
+          br: { col: 2, row: 1, nativeCol: 2, nativeRow: 1, nativeColOff: 2496589, nativeRowOff: 424544 },
         });
       }
-
-      // Merge rows 1-2 for logo area, matching template row heights
       sheet.mergeCells(1, 1, 2, headers.length);
       sheet.getRow(1).height = 44.6;
       sheet.getRow(2).height = 44.6;
-
-      // Header row — match template styling exactly
       const headerRow = sheet.getRow(3);
       headers.forEach((h, i) => {
         const cell = headerRow.getCell(i + 1);
@@ -318,17 +354,17 @@ router.get('/export/quotation', authenticate, async (req, res) => {
         cell.alignment = tplHeaderAlign;
       });
       headerRow.height = 30;
-
-      // Column widths matching template
       colWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+    };
 
-      // Data rows
+    // Helper to write product rows into a sheet starting at startRow
+    const writeProducts = async (sheet, products, startRow) => {
       for (let idx = 0; idx < products.length; idx++) {
         const p = products[idx];
         const row = sheet.getRow(startRow + idx);
 
         setCell(row, 1, '');
-        const { hasImage, imgHeight } = await embedImages(workbook, sheet, p.image_url, p.image_url_2, 0, startRow + idx - 1);
+        const { hasImage, imgHeight } = await embedImages(workbook, sheet, p.image_url, p.image_url_2, 0, startRow + idx - 1, { singleImage: true, maxSize: QUOTATION_IMG_MAX });
         row.height = hasImage ? imgHeight : 25;
 
         setCell(row, 2, p.name || '-', { ...dataFont, bold: true });
@@ -339,6 +375,36 @@ router.get('/export/quotation', authenticate, async (req, res) => {
         const priceVal = parseFloat(p[price_type] || 0);
         setCell(row, 6, priceVal > 0 ? priceVal.toFixed(2) : '-', { ...dataFont, bold: true, color: { argb: 'FF720E20' } });
       }
+    };
+
+    if (category) {
+      // Single category selected — all products in one sheet
+      let products = await Product.findAll({ where: { category }, order: [['createdAt', 'DESC']] });
+      if (locationProductIds) {
+        products = products.filter(p => locationProductIds.has(p.id));
+      }
+      const sheet = workbook.addWorksheet(category);
+      setupSheet(sheet);
+      await writeProducts(sheet, products, 4);
+    } else {
+      // All Categories — each category gets its own sheet
+      for (const cat of categoriesToExport) {
+        let products = await Product.findAll({ where: { category: cat }, order: [['createdAt', 'DESC']] });
+        if (locationProductIds) {
+          products = products.filter(p => locationProductIds.has(p.id));
+        }
+        if (products.length === 0) continue;
+
+        const sheet = workbook.addWorksheet(cat);
+        setupSheet(sheet);
+        await writeProducts(sheet, products, 4);
+      }
+    }
+
+    // Ensure at least one sheet exists (Excel requires it)
+    if (workbook.worksheets.length === 0) {
+      const sheet = workbook.addWorksheet('No Products');
+      setupSheet(sheet);
     }
 
     const catName = catNameMap[category] || (category || 'all_products').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();

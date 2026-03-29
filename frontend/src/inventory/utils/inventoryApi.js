@@ -74,10 +74,11 @@ export const reportsApi = {
       responseType: 'blob',
     });
   },
-  exportQuotation: (api, category = '', priceType = 'retail_price') => {
+  exportQuotation: (api, category = '', priceType = 'retail_price', locationId = '') => {
     const params = new URLSearchParams();
     if (category) params.append('category', category);
     if (priceType) params.append('price_type', priceType);
+    if (locationId) params.append('location_id', locationId);
     const query = params.toString();
     return api.get(`/reports/export/quotation${query ? `?${query}` : ''}`, {
       responseType: 'blob',

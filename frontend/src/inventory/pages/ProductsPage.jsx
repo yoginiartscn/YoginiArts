@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Quagga from '@ericblade/quagga2';
 import { useApi } from '../hooks/useApi';
-import { productsApi, reportsApi, getImageUrl } from '../utils/inventoryApi';
+import { productsApi, reportsApi, locationsApi, getImageUrl } from '../utils/inventoryApi';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function ProductsPage() {
@@ -35,6 +35,9 @@ export default function ProductsPage() {
   const [showSearch, setShowSearch] = useState(false);
   const searchInputRef = useRef(null);
   const [filterCategory, setFilterCategory] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const ROWS_PER_PAGE = 20;
+  const [visibleRows, setVisibleRows] = useState({}); // { 'Singing Bowl': 20, ... }
 
   // Quotation download
   const [showQuotation, setShowQuotation] = useState(false);
@@ -52,6 +55,16 @@ export default function ProductsPage() {
   const [imageFile, setImageFile] = useState(null);
   const [imageFile2, setImageFile2] = useState(null);
 
+  const [locations, setLocations] = useState([]);
+  const [filterLocation, setFilterLocation] = useState('');
+  const [filterLocationOpen, setFilterLocationOpen] = useState(false);
+  const filterLocationRef = useRef(null);
+
+  // Quotation location
+  const [quotationLocation, setQuotationLocation] = useState('');
+  const [quotationLocOpen, setQuotationLocOpen] = useState(false);
+  const quotationLocRef = useRef(null);
+
   const [descriptionPopup, setDescriptionPopup] = useState(null); // { name, description }
   const [batchScanned, setBatchScanned] = useState([]); // [{ barcode, name, category, matched }]
   const [batchScanning, setBatchScanning] = useState(false);
@@ -67,10 +80,26 @@ export default function ProductsPage() {
   const globalLastKeyTimeRef = useRef(0);
   const globalScanTimerRef = useRef(null);
 
+  // Debounce search input — wait 400ms after user stops typing
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchProducts = async () => {
     try {
-      const res = await productsApi.getAll(api, search);
-      setProducts(res.data.data);
+      const res = await productsApi.getAll(api, debouncedSearch);
+      let data = res.data.data;
+      if (filterLocation) {
+        const invRes = await api.get(`/inventory?location_id=${filterLocation}`);
+        const invData = invRes.data.data || [];
+        const productIdsAtLocation = new Set(
+          invData.filter(inv => inv.quantity > 0).map(inv => inv.product_id)
+        );
+        data = data.filter(p => productIdsAtLocation.has(p.id));
+      }
+      setProducts(data);
+      setVisibleRows({});
     } catch (err) {
       console.error(err);
     } finally {
@@ -80,7 +109,11 @@ export default function ProductsPage() {
 
   useEffect(() => {
     fetchProducts();
-  }, [search]);
+  }, [debouncedSearch, filterLocation]);
+
+  useEffect(() => {
+    locationsApi.getAll(api).then(res => setLocations(res.data.data || [])).catch(() => {});
+  }, []);
 
   const resetForm = () => {
     setForm({ name: '', description: '', image_url: '', image_url_2: '', barcode: '', cost_price: '', retail_price: '', wholesale_price: '', category: '', weight: '', size: '', quantity: 1 });
@@ -183,6 +216,25 @@ export default function ProductsPage() {
     }
   };
 
+  const productsRef = useRef(products);
+  productsRef.current = products;
+
+  const lookupBarcode = useCallback((barcode) => {
+    return productsRef.current.find(
+      (p) => p.barcode && p.barcode.toLowerCase() === barcode.toLowerCase()
+    ) || null;
+  }, []);
+
+  const getCategoryFromBarcode = (barcode) => {
+    if (!barcode) return '';
+    const upper = barcode.toUpperCase();
+    if (upper.startsWith('SB')) return 'Singing Bowl';
+    if (upper.startsWith('YA')) return 'Thanka';
+    if (upper.startsWith('MA')) return 'Jewelleries';
+    if (upper.startsWith('TL')) return 'Thanka Locket';
+    return '';
+  };
+
   // Helper: add a barcode to the batch table
   const addBarcodeToBatch = useCallback((barcode) => {
     const matched = lookupBarcode(barcode);
@@ -196,7 +248,7 @@ export default function ProductsPage() {
         matched: !!matched,
       }];
     });
-  }, [products]);
+  }, [lookupBarcode]);
 
   // Barcode scanner handler — detects rapid keystrokes from USB/Bluetooth scanner
   const handleScanKeyDown = useCallback((e) => {
@@ -311,7 +363,7 @@ export default function ProductsPage() {
 
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [showForm, showScanner, showAddChoice, products]);
+  }, [showForm, showScanner, showAddChoice]);
 
   // Auto-focus scanner input when modal opens
   useEffect(() => {
@@ -320,11 +372,6 @@ export default function ProductsPage() {
     }
   }, [showScanner, scanMode]);
 
-  const lookupBarcode = (barcode) => {
-    return products.find(
-      (p) => p.barcode && p.barcode.toLowerCase() === barcode.toLowerCase()
-    ) || null;
-  };
 
   // All 1D barcode readers for Quagga2
   const quaggaReaders = [
@@ -653,16 +700,6 @@ export default function ProductsPage() {
     setIsDragging(false);
   };
 
-  const getCategoryFromBarcode = (barcode) => {
-    if (!barcode) return '';
-    const upper = barcode.toUpperCase();
-    if (upper.startsWith('SB')) return 'Singing Bowl';
-    if (upper.startsWith('YA')) return 'Thanka';
-    if (upper.startsWith('MA')) return 'Jewelleries';
-    if (upper.startsWith('TL')) return 'Thanka Locket';
-    return '';
-  };
-
   const handleScanComplete = () => {
     setShowScanner(false);
     if (matchedProduct) {
@@ -699,9 +736,21 @@ export default function ProductsPage() {
   };
 
 
+  // Close location filter dropdown on outside click
+  useEffect(() => {
+    if (!filterLocationOpen) return;
+    const handleClick = (e) => {
+      if (filterLocationRef.current && !filterLocationRef.current.contains(e.target)) {
+        setFilterLocationOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [filterLocationOpen]);
+
   // Close quotation dropdowns on outside click
   useEffect(() => {
-    if (!quotationCatOpen && !quotationPriceOpen) return;
+    if (!quotationCatOpen && !quotationPriceOpen && !quotationLocOpen) return;
     const handleClick = (e) => {
       if (quotationCatOpen && quotationCatRef.current && !quotationCatRef.current.contains(e.target)) {
         setQuotationCatOpen(false);
@@ -709,18 +758,22 @@ export default function ProductsPage() {
       if (quotationPriceOpen && quotationPriceRef.current && !quotationPriceRef.current.contains(e.target)) {
         setQuotationPriceOpen(false);
       }
+      if (quotationLocOpen && quotationLocRef.current && !quotationLocRef.current.contains(e.target)) {
+        setQuotationLocOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [quotationCatOpen, quotationPriceOpen]);
+  }, [quotationCatOpen, quotationPriceOpen, quotationLocOpen]);
 
   const handleDownloadQuotation = async () => {
     try {
-      const res = await reportsApi.exportQuotation(api, quotationCategory, quotationPriceType);
+      const res = await reportsApi.exportQuotation(api, quotationCategory, quotationPriceType, quotationLocation);
       const catName = (quotationCategory || 'All_Products').replace(/\s+/g, '_');
+      const locName = quotationLocation ? (locations.find(l => l.id === quotationLocation)?.name?.replace(/\s+/g, '_') || 'Location') : '';
       const priceLabels = { cost_price: 'Cost_Price', retail_price: 'Retail_Price', wholesale_price: 'Wholesale_Price' };
       const dateStr = new Date().toISOString().slice(0, 10);
-      const fileName = `${catName}_${priceLabels[quotationPriceType] || 'Price'}_${dateStr}_quotation.xlsx`;
+      const fileName = `${catName}${locName ? '_' + locName : ''}_${priceLabels[quotationPriceType] || 'Price'}_${dateStr}_quotation.xlsx`;
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -731,6 +784,7 @@ export default function ProductsPage() {
       window.URL.revokeObjectURL(url);
       setShowQuotation(false);
     } catch (err) {
+      console.error('Quotation download error:', err);
       alert('Failed to download quotation');
     }
   };
@@ -741,6 +795,29 @@ export default function ProductsPage() {
       setScannedBarcode('');
     }
   };
+
+  // Memoize product grouping by category to avoid recalculation on every render
+  const allCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
+  const productsByCategory = useMemo(() => {
+    const map = {};
+    for (const cat of allCats) map[cat] = [];
+    const uncategorized = [];
+    for (const p of products) {
+      if (p.category && map[p.category]) map[p.category].push(p);
+      else uncategorized.push(p);
+    }
+    map['Others'] = uncategorized;
+    return map;
+  }, [products]);
+
+  // Memoize category counts for tabs
+  const categoryCounts = useMemo(() => {
+    const counts = {};
+    for (const cat of [...allCats, 'Others']) {
+      counts[cat] = (productsByCategory[cat] || []).length;
+    }
+    return counts;
+  }, [productsByCategory]);
 
   return (
     <div>
@@ -784,6 +861,41 @@ export default function ProductsPage() {
               />
             </div>
           </div>
+          {/* Location filter dropdown */}
+          <div className="relative" ref={filterLocationRef}>
+            <button
+              onClick={() => setFilterLocationOpen(!filterLocationOpen)}
+              className={`px-4 py-2 rounded-[1.2rem] font-medium flex items-center gap-1.5 transition-colors ${filterLocation ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span className="text-sm">{filterLocation ? locations.find(l => l.id === filterLocation)?.name || t('location') : t('allLocations')}</span>
+              <svg className={`w-3.5 h-3.5 transition-transform ${filterLocationOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {filterLocationOpen && (
+              <ul className="absolute z-20 mt-1 right-0 w-56 bg-white border border-gray-300 rounded-[1.2rem] shadow-lg overflow-hidden">
+                <li
+                  onClick={() => { setFilterLocation(''); setFilterLocationOpen(false); }}
+                  className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${!filterLocation ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                >
+                  {t('allLocations')}
+                </li>
+                {locations.map(loc => (
+                  <li
+                    key={loc.id}
+                    onClick={() => { setFilterLocation(loc.id); setFilterLocationOpen(false); }}
+                    className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${filterLocation === loc.id ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    {loc.name}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <button
             onClick={() => { resetForm(); setShowAddChoice(true); }}
             className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
@@ -791,7 +903,7 @@ export default function ProductsPage() {
             {t('addProduct')}
           </button>
           <button
-            onClick={() => { setQuotationCategory(''); setQuotationPriceType('retail_price'); setShowQuotation(true); }}
+            onClick={() => { setQuotationCategory(''); setQuotationPriceType('retail_price'); setQuotationLocation(''); setShowQuotation(true); }}
             className="px-4 py-2 bg-green-700 text-white rounded-[1.2rem] hover:bg-green-800 font-medium"
           >
             {t('downloadQuotation')}
@@ -1507,33 +1619,24 @@ export default function ProductsPage() {
 
       {/* Category filter tabs */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {(() => {
-          const cats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries', 'Others'];
-          return cats.map(cat => {
-            const isOthers = cat === 'Others';
-            const catProducts = products.filter(p => {
-              const pCat = p.category;
-              if (isOthers) return !pCat || !['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].includes(pCat);
-              return pCat === cat;
-            });
-            const totalQty = catProducts.length;
-            if (totalQty === 0 && filterCategory !== cat) return null;
-            const isActive = filterCategory === cat;
-            return (
-              <button
-                key={cat}
-                onClick={() => setFilterCategory(isActive ? '' : cat)}
-                className={`px-3 py-1.5 rounded-[1.2rem] text-sm font-medium transition-all border ${
-                  isActive
-                    ? 'bg-amber-800 text-white border-amber-800'
-                    : 'bg-white text-amber-800 border-gray-200 hover:border-amber-300'
-                }`}
-              >
-                {td(cat)} <span className="font-bold ml-1">| &nbsp;{totalQty} QTY</span>
-              </button>
-            );
-          });
-        })()}
+        {[...allCats, 'Others'].map(cat => {
+          const totalQty = categoryCounts[cat];
+          if (totalQty === 0 && filterCategory !== cat) return null;
+          const isActive = filterCategory === cat;
+          return (
+            <button
+              key={cat}
+              onClick={() => setFilterCategory(isActive ? '' : cat)}
+              className={`px-3 py-1.5 rounded-[1.2rem] text-sm font-medium transition-all border ${
+                isActive
+                  ? 'bg-amber-800 text-white border-amber-800'
+                  : 'bg-white text-amber-800 border-gray-200 hover:border-amber-300'
+              }`}
+            >
+              {td(cat)} <span className="font-bold ml-1">| &nbsp;{totalQty} QTY</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Products Tables — grouped by category */}
@@ -1543,11 +1646,14 @@ export default function ProductsPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {(['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries']
+          {allCats
             .filter((cat) => !filterCategory || filterCategory === cat)
             .map((cat) => {
-              const catProducts = products.filter((p) => p.category === cat);
+              const catProducts = productsByCategory[cat];
               if (catProducts.length === 0) return null;
+              const limit = visibleRows[cat] || ROWS_PER_PAGE;
+              const visibleProducts = catProducts.slice(0, limit);
+              const hasMore = catProducts.length > limit;
               return (
                 <div key={cat}>
                   <h2 className="text-lg font-bold text-gray-800 mb-3">
@@ -1570,7 +1676,7 @@ export default function ProductsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {catProducts.map((p) => (
+                        {visibleProducts.map((p) => (
                           <tr key={p.id} className="transition-colors hover:bg-amber-50/60">
                             <td className="px-5 py-4 border-b border-gray-100">
                               {(() => {
@@ -1580,6 +1686,7 @@ export default function ProductsPage() {
                                     <img
                                       src={imgs[0]}
                                       alt={p.name}
+                                      loading="lazy"
                                       className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
                                       onClick={() => setPreviewImages({ images: imgs, index: 0 })}
                                     />
@@ -1621,14 +1728,24 @@ export default function ProductsPage() {
                       </tbody>
                     </table>
                   </div>
+                  {hasMore && (
+                    <button
+                      onClick={() => setVisibleRows(prev => ({ ...prev, [cat]: limit + ROWS_PER_PAGE }))}
+                      className="w-full mt-2 py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-[1.2rem] transition-colors"
+                    >
+                      Show More ({catProducts.length - limit} remaining)
+                    </button>
+                  )}
                 </div>
               );
-            })
-          )}
+            })}
           {/* Uncategorized products */}
           {(() => {
-            const uncategorized = products.filter((p) => !p.category || !['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].includes(p.category));
+            const uncategorized = productsByCategory['Others'];
             if ((filterCategory && filterCategory !== 'Others') || uncategorized.length === 0) return null;
+            const othersLimit = visibleRows['Others'] || ROWS_PER_PAGE;
+            const visibleOthers = uncategorized.slice(0, othersLimit);
+            const othersHasMore = uncategorized.length > othersLimit;
             return (
               <div>
                 <h2 className="text-lg font-bold text-gray-800 mb-3">
@@ -1650,7 +1767,7 @@ export default function ProductsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {uncategorized.map((p) => (
+                      {visibleOthers.map((p) => (
                         <tr key={p.id} className="transition-colors hover:bg-amber-50/60">
                           <td className="px-5 py-4 border-b border-gray-100">
                             {(() => {
@@ -1688,6 +1805,14 @@ export default function ProductsPage() {
                     </tbody>
                   </table>
                 </div>
+                {othersHasMore && (
+                  <button
+                    onClick={() => setVisibleRows(prev => ({ ...prev, Others: othersLimit + ROWS_PER_PAGE }))}
+                    className="w-full mt-2 py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-[1.2rem] transition-colors"
+                  >
+                    Show More ({uncategorized.length - othersLimit} remaining)
+                  </button>
+                )}
               </div>
             );
           })()}
@@ -1809,13 +1934,49 @@ export default function ProductsPage() {
                   >
                     {t('allCategories')}
                   </li>
-                  {['Singing Bowl', 'Thanka', 'Jewelleries'].map((cat) => (
+                  {['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].map((cat) => (
                     <li
                       key={cat}
                       onClick={() => { setQuotationCategory(cat); setQuotationCatOpen(false); }}
                       className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${quotationCategory === cat ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
                     >
                       {td(cat)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Location Dropdown */}
+            <div className="mb-4 relative" ref={quotationLocRef}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('location')}</label>
+              <button
+                type="button"
+                onClick={() => { setQuotationLocOpen(!quotationLocOpen); setQuotationCatOpen(false); setQuotationPriceOpen(false); }}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-[1.2rem] bg-white text-left flex items-center justify-between focus:outline-none"
+              >
+                <span className={quotationLocation ? 'text-gray-900' : 'text-gray-400'}>
+                  {quotationLocation ? locations.find(l => l.id === quotationLocation)?.name || t('allLocations') : t('allLocations')}
+                </span>
+                <svg className={`w-4 h-4 text-gray-500 transition-transform ${quotationLocOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {quotationLocOpen && (
+                <ul className="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-[1.2rem] shadow-lg overflow-hidden">
+                  <li
+                    onClick={() => { setQuotationLocation(''); setQuotationLocOpen(false); }}
+                    className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${!quotationLocation ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                  >
+                    {t('allLocations')}
+                  </li>
+                  {locations.map(loc => (
+                    <li
+                      key={loc.id}
+                      onClick={() => { setQuotationLocation(loc.id); setQuotationLocOpen(false); }}
+                      className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors text-sm ${quotationLocation === loc.id ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
+                    >
+                      {loc.name}
                     </li>
                   ))}
                 </ul>
