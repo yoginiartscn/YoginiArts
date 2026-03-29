@@ -52,6 +52,7 @@ export default function ProductsPage() {
   const [imageFile, setImageFile] = useState(null);
   const [imageFile2, setImageFile2] = useState(null);
 
+  const [descriptionPopup, setDescriptionPopup] = useState(null); // { name, description }
   const [batchScanned, setBatchScanned] = useState([]); // [{ barcode, name, category, matched }]
   const [batchScanning, setBatchScanning] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
@@ -132,7 +133,23 @@ export default function ProductsPage() {
     if (batchEditIndex !== null) {
       setBatchScanned(prev => prev.map((item, i) =>
         i === batchEditIndex
-          ? { ...item, barcode: form.barcode, name: form.name, category: form.category }
+          ? {
+              ...item,
+              barcode: form.barcode,
+              name: form.name,
+              category: form.category,
+              description: form.description,
+              cost_price: form.cost_price,
+              retail_price: form.retail_price,
+              wholesale_price: form.wholesale_price,
+              weight: form.weight,
+              size: form.size,
+              quantity: form.quantity,
+              imageFile: imageFile || item.imageFile || null,
+              imageFile2: imageFile2 || item.imageFile2 || null,
+              imagePreview: imagePreview || item.imagePreview || null,
+              imagePreview2: imagePreview2 || item.imagePreview2 || null,
+            }
           : item
       ));
       setBatchEditIndex(null);
@@ -556,7 +573,14 @@ export default function ProductsPage() {
           name: item.name || item.barcode,
           barcode: item.barcode,
           category: item.category || null,
-        });
+          description: item.description || '',
+          cost_price: item.cost_price || '',
+          retail_price: item.retail_price || '',
+          wholesale_price: item.wholesale_price || '',
+          weight: item.weight || '',
+          size: item.size || '',
+          quantity: Math.max(1, parseInt(item.quantity) || 1),
+        }, item.imageFile || null, item.imageFile2 || null);
         added++;
       } catch {
         // Skip items that fail (e.g. barcode already exists)
@@ -575,21 +599,22 @@ export default function ProductsPage() {
     const cat = item.category || getCategoryFromBarcode(item.barcode);
     setForm({
       name: item.name || (cat === 'Singing Bowl' ? item.barcode : ''),
-      description: '',
+      description: item.description || '',
       image_url: '',
       image_url_2: '',
       barcode: item.barcode,
-      cost_price: '',
-      retail_price: '',
-      wholesale_price: '',
+      cost_price: item.cost_price || '',
+      retail_price: item.retail_price || '',
+      wholesale_price: item.wholesale_price || '',
       category: cat,
-      weight: '',
-      size: '',
+      weight: item.weight || '',
+      size: item.size || '',
+      quantity: item.quantity || 1,
     });
-    setImagePreview(null);
-    setImagePreview2(null);
-    setImageFile(null);
-    setImageFile2(null);
+    setImagePreview(item.imagePreview || null);
+    setImagePreview2(item.imagePreview2 || null);
+    setImageFile(item.imageFile || null);
+    setImageFile2(item.imageFile2 || null);
     setEditingProduct(null);
     setBatchEditIndex(index);
     setShowScanner(false);
@@ -1361,8 +1386,8 @@ export default function ProductsPage() {
               </div>
 
               {/* Row 4: Weight, Size, Qty */}
-              <div className={`grid ${form.category === 'Thanka' || form.category === 'Thanka Locket' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
-                {form.category !== 'Thanka' && form.category !== 'Thanka Locket' && (
+              <div className={`grid ${form.category === 'Thanka' || form.category === 'Thanka Locket' || form.category === 'Jewelleries' ? 'grid-cols-2' : 'grid-cols-3'} gap-3`}>
+                {form.category !== 'Thanka' && form.category !== 'Thanka Locket' && form.category !== 'Jewelleries' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('weight')}</label>
                   <input
@@ -1535,7 +1560,8 @@ export default function ProductsPage() {
                           <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('image')}</th>
                           <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('name')}</th>
                           <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('barcode')}</th>
-                          {cat !== 'Thanka' && cat !== 'Thanka Locket' && <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('weight')}</th>}
+                          {(cat === 'Thanka' || cat === 'Thanka Locket') && <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('description')}</th>}
+                          {cat !== 'Thanka' && cat !== 'Thanka Locket' && cat !== 'Jewelleries' && <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('weight')}</th>}
                           <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('size')}</th>
                           <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('cost')}</th>
                           <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('wholesale')}</th>
@@ -1568,7 +1594,20 @@ export default function ProductsPage() {
                             </td>
                             <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{p.name}</td>
                             <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
-                            {cat !== 'Thanka' && cat !== 'Thanka Locket' && <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{p.weight || '-'}</td>}
+                            {(cat === 'Thanka' || cat === 'Thanka Locket') && (
+                              <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">
+                                {p.description ? (
+                                  <button
+                                    onClick={() => setDescriptionPopup({ name: p.name, description: p.description })}
+                                    className="text-amber-700 hover:text-amber-900 underline underline-offset-2 text-left truncate max-w-[150px] block"
+                                    title={p.description}
+                                  >
+                                    {p.description.length > 20 ? p.description.slice(0, 20) + '...' : p.description}
+                                  </button>
+                                ) : '-'}
+                              </td>
+                            )}
+                            {cat !== 'Thanka' && cat !== 'Thanka Locket' && cat !== 'Jewelleries' && <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{p.weight || '-'}</td>}
                             <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{p.size || '-'}</td>
                             <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
                             <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
@@ -1832,6 +1871,32 @@ export default function ProductsPage() {
             >
               {t('cancel')}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Description Popup */}
+      {descriptionPopup && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setDescriptionPopup(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-800">{descriptionPopup.name}</h3>
+              <button
+                onClick={() => setDescriptionPopup(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{descriptionPopup.description}</p>
           </div>
         </div>
       )}
