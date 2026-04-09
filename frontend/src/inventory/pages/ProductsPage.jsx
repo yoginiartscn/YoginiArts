@@ -79,6 +79,7 @@ export default function ProductsPage() {
   const globalScanBufferRef = useRef('');
   const globalLastKeyTimeRef = useRef(0);
   const globalScanTimerRef = useRef(null);
+  const scrollToProductRef = useRef(null); // barcode of product to scroll to after table re-render
 
   // Debounce search input — wait 400ms after user stops typing
   useEffect(() => {
@@ -98,8 +99,33 @@ export default function ProductsPage() {
         );
         data = data.filter(p => productIdsAtLocation.has(p.id));
       }
+      const scrollBarcode = scrollToProductRef.current;
       setProducts(data);
-      setVisibleRows({});
+      if (scrollBarcode) {
+        const target = data.find(p => p.barcode && p.barcode.toLowerCase() === scrollBarcode.toLowerCase());
+        if (target) {
+          const knownCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
+          const cat = target.category && knownCats.includes(target.category) ? target.category : 'Others';
+          // Get items in same category to find position
+          const catItems = data.filter(p => {
+            const pCat = p.category && knownCats.includes(p.category) ? p.category : 'Others';
+            return pCat === cat;
+          });
+          const idx = catItems.findIndex(p => p.id === target.id);
+          const neededRows = idx >= 0 ? idx + 1 : catItems.length;
+          setVisibleRows(neededRows > ROWS_PER_PAGE ? { [cat]: neededRows + 5 } : {});
+          // Scroll to the product row after render
+          setTimeout(() => {
+            const row = document.querySelector(`[data-product-id="${target.id}"]`);
+            if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 300);
+        } else {
+          setVisibleRows({});
+        }
+        scrollToProductRef.current = null;
+      } else {
+        setVisibleRows({});
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -188,7 +214,7 @@ export default function ProductsPage() {
       setBatchEditIndex(null);
       setShowForm(false);
       setShowScanner(true);
-      setScanMode('upload');
+      setScanMode('device');
       return;
     }
     try {
@@ -198,6 +224,7 @@ export default function ProductsPage() {
       } else {
         await productsApi.create(api, submitData, imageFile, imageFile2);
       }
+      scrollToProductRef.current = form.barcode;
       resetForm();
       fetchProducts();
     } catch (err) {
@@ -235,18 +262,30 @@ export default function ProductsPage() {
     return '';
   };
 
+  const getPrefixForCategory = (category) => {
+    const map = { 'Thanka': 'YA ', 'Jewelleries': 'MA', 'Thanka Locket': 'TL' };
+    return map[category] || '';
+  };
+
   // Helper: add a barcode to the batch table
+  const BATCH_LIMIT = 50;
+  const [showBatchLimitPopup, setShowBatchLimitPopup] = useState(false);
+
   const addBarcodeToBatch = useCallback((barcode) => {
     const matched = lookupBarcode(barcode);
     const cat = getCategoryFromBarcode(barcode);
     setBatchScanned(prev => {
       if (prev.find(r => r.barcode === barcode)) return prev; // skip duplicates
-      return [...prev, {
+      if (prev.length >= BATCH_LIMIT) {
+        setShowBatchLimitPopup(true);
+        return prev;
+      }
+      return [{
         barcode,
-        name: matched?.name || (cat === 'Singing Bowl' ? barcode : ''),
+        name: matched?.name || (cat === 'Singing Bowl' ? barcode : (getPrefixForCategory(cat) || '')),
         category: matched?.category || cat,
         matched: !!matched,
-      }];
+      }, ...prev];
     });
   }, [lookupBarcode]);
 
@@ -309,19 +348,64 @@ export default function ProductsPage() {
   };
 
   // Global barcode scanner listener — auto-opens scanner modal with batch table
+  // Works even when focus is on an input (e.g. search) by detecting rapid keystrokes from a scanner
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
-      // Skip if any modal is open or user is typing in an input/textarea
-      if (showForm || showScanner || showAddChoice) return;
-      const tag = e.target.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Skip if any modal/dialog is open
+      if (showForm || showScanner || showAddChoice || duplicateProduct) return;
 
+      const tag = e.target.tagName;
+      const isInInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       const now = Date.now();
+      const timeDiff = now - globalLastKeyTimeRef.current;
+
+      // For input fields: only allow rapid keystrokes (scanner) to pass through
+      // A barcode scanner types much faster (<50ms between keys) than a human
+      if (isInInput) {
+        // If this is the first key or slow typing, treat as normal input — skip
+        if (globalScanBufferRef.current.length === 0 && e.key !== 'Enter') {
+          // First character — record time but don't intercept yet
+          if (e.key.length === 1) {
+            globalLastKeyTimeRef.current = now;
+            globalScanBufferRef.current = e.key;
+            clearTimeout(globalScanTimerRef.current);
+            globalScanTimerRef.current = setTimeout(() => {
+              // If still just a few chars after 300ms, it was manual typing — clear
+              if (globalScanBufferRef.current.length < 5) {
+                globalScanBufferRef.current = '';
+              }
+            }, 300);
+          }
+          return;
+        }
+        // Subsequent chars: if slow (>80ms), it's manual typing — reset and skip
+        if (e.key.length === 1 && timeDiff > 80) {
+          globalScanBufferRef.current = '';
+          globalLastKeyTimeRef.current = now;
+          return;
+        }
+        // Fast keystrokes in input — this is a scanner, prevent the char from going into the input
+        if (e.key.length === 1) {
+          e.preventDefault();
+        }
+      }
 
       if (e.key === 'Enter') {
-        e.preventDefault();
         const barcode = globalScanBufferRef.current.trim();
+        // Only process if we have a barcode-length string from rapid input
         if (barcode.length >= 3) {
+          e.preventDefault();
+          // If scanning into an input, clear the partial text that got in before detection
+          if (isInInput && e.target.value) {
+            // Remove scanner chars that leaked into the input before we started intercepting
+            const leaked = barcode.substring(0, 2); // first 1-2 chars may have leaked
+            if (e.target.value.endsWith(leaked)) {
+              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+              const cleaned = e.target.value.slice(0, -leaked.length);
+              nativeInputValueSetter.call(e.target, cleaned);
+              e.target.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }
           const matched = lookupBarcode(barcode);
           if (matched) {
             // Existing product — open duplicate stock-in dialog
@@ -329,12 +413,10 @@ export default function ProductsPage() {
             setDuplicateQty(1);
           } else {
             // New barcode — open scanner modal with batch table
-            if (!showScanner) {
-              setShowScanner(true);
-              setScanMode('device');
-              setScanStatus('waiting');
-              setScannedBarcode('');
-            }
+            setShowScanner(true);
+            setScanMode('device');
+            setScanStatus('waiting');
+            setScannedBarcode('');
             addBarcodeToBatch(barcode);
           }
         }
@@ -344,10 +426,9 @@ export default function ProductsPage() {
 
       if (e.key.length !== 1) return;
 
-      const timeDiff = now - globalLastKeyTimeRef.current;
       globalLastKeyTimeRef.current = now;
 
-      if (timeDiff > 100) {
+      if (!isInInput && timeDiff > 100) {
         globalScanBufferRef.current = '';
       }
 
@@ -363,7 +444,7 @@ export default function ProductsPage() {
 
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [showForm, showScanner, showAddChoice]);
+  }, [showForm, showScanner, showAddChoice, duplicateProduct, lookupBarcode, addBarcodeToBatch]);
 
   // Auto-focus scanner input when modal opens
   useEffect(() => {
@@ -543,7 +624,7 @@ export default function ProductsPage() {
 
   // Batch scan multiple barcode images
   const processBatchImages = async (files) => {
-    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, 15);
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, BATCH_LIMIT);
     if (imageFiles.length === 0) return;
 
     setBatchScanning(true);
@@ -583,7 +664,7 @@ export default function ProductsPage() {
         if (!results.find(r => r.barcode === barcode)) {
           results.push({
             barcode,
-            name: matched?.name || (cat === 'Singing Bowl' ? barcode : ''),
+            name: matched?.name || (cat === 'Singing Bowl' ? barcode : (getPrefixForCategory(cat) || '')),
             category: matched?.category || cat,
             matched: !!matched,
           });
@@ -596,7 +677,7 @@ export default function ProductsPage() {
     setBatchScanned(prev => {
       const existing = prev.map(p => p.barcode);
       const newItems = results.filter(r => !existing.includes(r.barcode));
-      return [...prev, ...newItems];
+      return [...newItems.reverse(), ...prev];
     });
     setBatchScanning(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -636,6 +717,9 @@ export default function ProductsPage() {
     }
 
     setBatchAdding(false);
+    // Scroll to the last added item
+    const lastAdded = newItems[newItems.length - 1];
+    if (lastAdded) scrollToProductRef.current = lastAdded.barcode;
     setBatchScanned([]);
     setShowScanner(false);
     fetchProducts();
@@ -645,7 +729,7 @@ export default function ProductsPage() {
     const item = batchScanned[index];
     const cat = item.category || getCategoryFromBarcode(item.barcode);
     setForm({
-      name: item.name || (cat === 'Singing Bowl' ? item.barcode : ''),
+      name: item.name || (cat === 'Singing Bowl' ? item.barcode : (getPrefixForCategory(cat) || '')),
       description: item.description || '',
       image_url: '',
       image_url_2: '',
@@ -672,7 +756,7 @@ export default function ProductsPage() {
     setBatchEditIndex(null);
     setShowForm(false);
     setShowScanner(true);
-    setScanMode('upload');
+    setScanMode('device');
   };
 
   const handleBatchDelete = (index) => {
@@ -728,6 +812,7 @@ export default function ProductsPage() {
         location_id: guangzhou.id,
         quantity: duplicateQty,
       });
+      scrollToProductRef.current = duplicateProduct.barcode;
       setDuplicateProduct(null);
       fetchProducts();
     } catch (err) {
@@ -919,7 +1004,16 @@ export default function ProductsPage() {
             <p className="text-gray-500 text-sm mb-6">{t('chooseHowToAdd')}</p>
             <div className="space-y-3">
               <button
-                onClick={() => { setShowAddChoice(false); setShowForm(true); }}
+                onClick={() => {
+                  // Pre-fill barcode prefix based on active category filter
+                  const prefixMap = { 'Thanka': 'YA', 'Singing Bowl': 'SB', 'Jewelleries': 'MA', 'Thanka Locket': 'TL' };
+                  const prefix = prefixMap[filterCategory] || '';
+                  if (prefix) {
+                    setForm(prev => ({ ...prev, barcode: prefix, name: prefix, category: filterCategory }));
+                  }
+                  setShowAddChoice(false);
+                  setShowForm(true);
+                }}
                 className="w-full flex items-center gap-3 px-5 py-4 rounded-[1.2rem] border-2 border-gray-200 hover:border-amber-700 hover:bg-amber-50 transition-all duration-200 group"
               >
                 <span className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 group-hover:bg-amber-700 group-hover:text-white transition-all duration-200">
@@ -1182,7 +1276,7 @@ export default function ProductsPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                     <p className="text-sm text-gray-600 font-medium text-center">
-                      {isDragging ? 'Drop images here' : 'Select or drag up to 15 barcode images'}
+                      {isDragging ? 'Drop images here' : `Select or drag up to ${BATCH_LIMIT} barcode images`}
                     </p>
                     <p className="text-xs text-gray-400 mt-1 text-center">Upload photos of barcodes to scan in batch</p>
                   </div>
@@ -1323,13 +1417,40 @@ export default function ProductsPage() {
                     type="text"
                     value={form.name}
                     onChange={(e) => {
-                      const val = e.target.value.toUpperCase();
+                      const el = e.target;
+                      const cursor = el.selectionStart;
+                      const val = el.value.toUpperCase();
+                      const prefix = getPrefixForCategory(form.category);
+                      // Prevent deleting the category prefix
+                      if (prefix && !val.startsWith(prefix)) {
+                        requestAnimationFrame(() => el.setSelectionRange(prefix.length, prefix.length));
+                        return;
+                      }
                       const autoCat = getCategoryFromBarcode(val);
                       setForm((prev) => ({
                         ...prev,
                         name: val,
                         ...(autoCat && !prev.category ? { category: autoCat } : {}),
                       }));
+                      requestAnimationFrame(() => el.setSelectionRange(cursor, cursor));
+                    }}
+                    onKeyDown={(e) => {
+                      const prefix = getPrefixForCategory(form.category);
+                      if (!prefix) return;
+                      const el = e.target;
+                      // Block backspace/delete if it would erase into the prefix
+                      if (e.key === 'Backspace' && el.selectionStart <= prefix.length && el.selectionEnd <= prefix.length) {
+                        e.preventDefault();
+                      }
+                      if (e.key === 'Delete' && el.selectionStart < prefix.length) {
+                        e.preventDefault();
+                      }
+                    }}
+                    onSelect={(e) => {
+                      const prefix = getPrefixForCategory(form.category);
+                      if (prefix && e.target.selectionStart < prefix.length && e.target.selectionEnd <= prefix.length) {
+                        e.target.setSelectionRange(prefix.length, prefix.length);
+                      }
                     }}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
@@ -1386,21 +1507,39 @@ export default function ProductsPage() {
                   ) : (
                     /* At least one image — show thumbnails */
                     <>
-                      <button
-                        type="button"
-                        onClick={() => productImageRef.current?.click()}
-                        className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors overflow-hidden"
-                      >
-                        {imagePreview ? (
-                          <img src={imagePreview} alt="Preview 1" className="w-full h-full object-cover rounded-[1.2rem]" />
-                        ) : (
-                          <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 15V3" />
-                            <path d="M7 7l5-5 5 5" />
-                            <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
-                          </svg>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => productImageRef.current?.click()}
+                          className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors overflow-hidden"
+                        >
+                          {imagePreview ? (
+                            <img src={imagePreview} alt="Preview 1" className="w-full h-full object-cover rounded-[1.2rem]" />
+                          ) : (
+                            <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 15V3" />
+                              <path d="M7 7l5-5 5 5" />
+                              <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                            </svg>
+                          )}
+                        </button>
+                        {imagePreview && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setImagePreview(null);
+                              setImageFile(null);
+                              setForm(prev => ({ ...prev, image_url: '' }));
+                            }}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-sm transition-colors"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
                         )}
-                      </button>
+                      </div>
                       <input
                         type="file"
                         accept="image/*"
@@ -1415,19 +1554,37 @@ export default function ProductsPage() {
                           e.target.value = '';
                         }}
                       />
-                      <button
-                        type="button"
-                        onClick={() => productImageRef2.current?.click()}
-                        className={`${imagePreview2 ? 'w-20' : 'w-10'} h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-all overflow-hidden`}
-                      >
-                        {imagePreview2 ? (
-                          <img src={imagePreview2} alt="Preview 2" className="w-full h-full object-cover rounded-[1.2rem]" />
-                        ) : (
-                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
-                          </svg>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => productImageRef2.current?.click()}
+                          className={`${imagePreview2 ? 'w-20' : 'w-10'} h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-all overflow-hidden`}
+                        >
+                          {imagePreview2 ? (
+                            <img src={imagePreview2} alt="Preview 2" className="w-full h-full object-cover rounded-[1.2rem]" />
+                          ) : (
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m-7-7h14" />
+                            </svg>
+                          )}
+                        </button>
+                        {imagePreview2 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setImagePreview2(null);
+                              setImageFile2(null);
+                              setForm(prev => ({ ...prev, image_url_2: '' }));
+                            }}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-sm transition-colors"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
                         )}
-                      </button>
+                      </div>
                     </>
                   )}
                 </div>
@@ -1455,7 +1612,26 @@ export default function ProductsPage() {
                         <li
                           key={option}
                           onClick={() => {
-                            setForm((prev) => ({ ...prev, category: option, ...(option === 'Singing Bowl' ? { name: prev.barcode } : {}) }));
+                            setForm((prev) => {
+                              const newPrefix = getPrefixForCategory(option);
+                              const oldPrefix = getPrefixForCategory(prev.category);
+                              // Replace old prefix with new one in name and barcode
+                              let newName = prev.name;
+                              let newBarcode = prev.barcode;
+                              if (!editingProduct) {
+                                if (oldPrefix && newName.startsWith(oldPrefix)) {
+                                  newName = newPrefix + newName.slice(oldPrefix.length);
+                                } else if (newPrefix && !newName.startsWith(newPrefix)) {
+                                  newName = newPrefix;
+                                }
+                                if (oldPrefix && newBarcode.startsWith(oldPrefix)) {
+                                  newBarcode = newPrefix + newBarcode.slice(oldPrefix.length);
+                                } else if (newPrefix && !newBarcode.startsWith(newPrefix)) {
+                                  newBarcode = newPrefix;
+                                }
+                              }
+                              return { ...prev, category: option, name: newName, barcode: newBarcode };
+                            });
                             setShowCategoryDropdown(false);
                           }}
                           className={`px-4 py-2.5 cursor-pointer hover:bg-amber-50 transition-colors ${form.category === option ? 'bg-amber-100 text-amber-800 font-medium' : 'text-gray-700'}`}
@@ -1472,7 +1648,14 @@ export default function ProductsPage() {
                     type="text"
                     value={form.barcode}
                     onChange={(e) => {
-                      const val = e.target.value.toUpperCase();
+                      const el = e.target;
+                      const cursor = el.selectionStart;
+                      const val = el.value.toUpperCase();
+                      const prefix = getPrefixForCategory(form.category);
+                      if (prefix && !val.startsWith(prefix)) {
+                        requestAnimationFrame(() => el.setSelectionRange(prefix.length, prefix.length));
+                        return;
+                      }
                       const autoCat = getCategoryFromBarcode(val);
                       setForm((prev) => ({
                         ...prev,
@@ -1480,6 +1663,24 @@ export default function ProductsPage() {
                         name: val,
                         ...(autoCat ? { category: autoCat } : {}),
                       }));
+                      requestAnimationFrame(() => el.setSelectionRange(cursor, cursor));
+                    }}
+                    onKeyDown={(e) => {
+                      const prefix = getPrefixForCategory(form.category);
+                      if (!prefix) return;
+                      const el = e.target;
+                      if (e.key === 'Backspace' && el.selectionStart <= prefix.length && el.selectionEnd <= prefix.length) {
+                        e.preventDefault();
+                      }
+                      if (e.key === 'Delete' && el.selectionStart < prefix.length) {
+                        e.preventDefault();
+                      }
+                    }}
+                    onSelect={(e) => {
+                      const prefix = getPrefixForCategory(form.category);
+                      if (prefix && e.target.selectionStart < prefix.length && e.target.selectionEnd <= prefix.length) {
+                        e.target.setSelectionRange(prefix.length, prefix.length);
+                      }
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none font-mono uppercase"
                   />
@@ -1677,7 +1878,7 @@ export default function ProductsPage() {
                       </thead>
                       <tbody>
                         {visibleProducts.map((p) => (
-                          <tr key={p.id} className="transition-colors hover:bg-amber-50/60">
+                          <tr key={p.id} data-product-id={p.id} className="transition-colors hover:bg-amber-50/60">
                             <td className="px-5 py-4 border-b border-gray-100">
                               {(() => {
                                 const imgs = [getImageUrl(p.image_url), getImageUrl(p.image_url_2)].filter(Boolean);
@@ -1897,6 +2098,29 @@ export default function ProductsPage() {
                 {t('cancel')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Limit Reached Popup */}
+      {showBatchLimitPopup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[1.2rem] shadow-xl p-6 w-full max-w-sm text-center">
+            <div className="w-14 h-14 rounded-full bg-amber-100 mx-auto mb-4 flex items-center justify-center">
+              <svg className="w-7 h-7 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">Batch Limit Reached</h3>
+            <p className="text-gray-600 mb-5">
+              You have reached the maximum of <span className="font-semibold">{BATCH_LIMIT}</span> products per batch. Please add these {BATCH_LIMIT} products first before scanning more.
+            </p>
+            <button
+              onClick={() => setShowBatchLimitPopup(false)}
+              className="w-full py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
+            >
+              OK
+            </button>
           </div>
         </div>
       )}
