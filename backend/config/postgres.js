@@ -21,11 +21,11 @@ const sequelize = databaseUrl
         },
       },
       pool: {
-        max: 10,
+        max: 3,
         min: 0,
         acquire: 30000,
         idle: 10000,
-        evict: 30000,
+        evict: 1000,
       },
       retry: { max: 3 },
     })
