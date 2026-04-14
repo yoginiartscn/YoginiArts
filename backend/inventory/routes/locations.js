@@ -1,5 +1,6 @@
 const express = require('express');
 const Location = require('../models/Location');
+const Inventory = require('../models/Inventory');
 const { authenticate } = require('../middleware/auth');
 const cache = require('../cache');
 
@@ -91,6 +92,30 @@ router.delete('/:id', authenticate, async (req, res) => {
     const location = await Location.findByPk(req.params.id);
     if (!location) {
       return res.status(404).json({ success: false, message: 'Location not found' });
+    }
+
+    // Find Guangzhou warehouse to restock products into
+    const guangzhou = await Location.findOne({ where: { name: 'Guangzhou' } });
+
+    if (guangzhou && guangzhou.id !== location.id) {
+      // Get all inventory records for the location being deleted
+      const inventoryRecords = await Inventory.findAll({ where: { location_id: location.id } });
+
+      for (const record of inventoryRecords) {
+        const existing = await Inventory.findOne({
+          where: { product_id: record.product_id, location_id: guangzhou.id },
+        });
+
+        if (existing) {
+          await existing.update({ quantity: existing.quantity + 1 });
+        } else {
+          await Inventory.create({
+            product_id: record.product_id,
+            location_id: guangzhou.id,
+            quantity: 1,
+          });
+        }
+      }
     }
 
     await location.destroy();

@@ -49,7 +49,7 @@ export default function ProductsPage() {
   const quotationPriceRef = useRef(null);
   const [duplicateProduct, setDuplicateProduct] = useState(null);
   const [duplicateQty, setDuplicateQty] = useState(1);
-  const categoryOptions = ['Singing Bowl', 'Thanka', 'Jewelleries', 'Thanka Locket'];
+  const categoryOptions = ['Singing Bowl', 'Thanka', 'Jewelleries', 'Thanka Locket', 'Others'];
   const productImageRef = useRef(null);
   const productImageRef2 = useRef(null);
   const [imageFile, setImageFile] = useState(null);
@@ -104,7 +104,7 @@ export default function ProductsPage() {
       if (scrollBarcode) {
         const target = data.find(p => p.barcode && p.barcode.toLowerCase() === scrollBarcode.toLowerCase());
         if (target) {
-          const knownCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
+          const knownCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries', 'Others'];
           const cat = target.category && knownCats.includes(target.category) ? target.category : 'Others';
           // Get items in same category to find position
           const catItems = data.filter(p => {
@@ -256,14 +256,15 @@ export default function ProductsPage() {
     if (!barcode) return '';
     const upper = barcode.toUpperCase();
     if (upper.startsWith('SB')) return 'Singing Bowl';
+    if (upper.startsWith('YA-LK')) return 'Thanka Locket';
     if (upper.startsWith('YA')) return 'Thanka';
     if (upper.startsWith('MA')) return 'Jewelleries';
     if (upper.startsWith('TL')) return 'Thanka Locket';
-    return '';
+    return 'Others';
   };
 
   const getPrefixForCategory = (category) => {
-    const map = { 'Thanka': 'YA ', 'Jewelleries': 'MA', 'Thanka Locket': 'TL' };
+    const map = { 'Thanka': 'YA', 'Jewelleries': 'MA', 'Thanka Locket': 'YA-LK-' };
     return map[category] || '';
   };
 
@@ -282,7 +283,7 @@ export default function ProductsPage() {
       }
       return [{
         barcode,
-        name: matched?.name || (cat === 'Singing Bowl' ? barcode : (getPrefixForCategory(cat) || '')),
+        name: matched?.name || (cat === 'Singing Bowl' ? barcode : (cat === 'Thanka Locket' ? 'Thanka Locket' : (getPrefixForCategory(cat) || ''))),
         category: matched?.category || cat,
         matched: !!matched,
       }, ...prev];
@@ -664,7 +665,7 @@ export default function ProductsPage() {
         if (!results.find(r => r.barcode === barcode)) {
           results.push({
             barcode,
-            name: matched?.name || (cat === 'Singing Bowl' ? barcode : (getPrefixForCategory(cat) || '')),
+            name: matched?.name || (cat === 'Singing Bowl' ? barcode : (cat === 'Thanka Locket' ? 'Thanka Locket' : (getPrefixForCategory(cat) || ''))),
             category: matched?.category || cat,
             matched: !!matched,
           });
@@ -729,7 +730,7 @@ export default function ProductsPage() {
     const item = batchScanned[index];
     const cat = item.category || getCategoryFromBarcode(item.barcode);
     setForm({
-      name: item.name || (cat === 'Singing Bowl' ? item.barcode : (getPrefixForCategory(cat) || '')),
+      name: item.name || (cat === 'Singing Bowl' ? item.barcode : (cat === 'Thanka Locket' ? 'Thanka Locket' : (getPrefixForCategory(cat) || ''))),
       description: item.description || '',
       image_url: '',
       image_url_2: '',
@@ -882,23 +883,21 @@ export default function ProductsPage() {
   };
 
   // Memoize product grouping by category to avoid recalculation on every render
-  const allCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
+  const allCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries', 'Others'];
   const productsByCategory = useMemo(() => {
     const map = {};
     for (const cat of allCats) map[cat] = [];
-    const uncategorized = [];
     for (const p of products) {
       if (p.category && map[p.category]) map[p.category].push(p);
-      else uncategorized.push(p);
+      else map['Others'].push(p);
     }
-    map['Others'] = uncategorized;
     return map;
   }, [products]);
 
   // Memoize category counts for tabs
   const categoryCounts = useMemo(() => {
     const counts = {};
-    for (const cat of [...allCats, 'Others']) {
+    for (const cat of allCats) {
       counts[cat] = (productsByCategory[cat] || []).length;
     }
     return counts;
@@ -1006,10 +1005,11 @@ export default function ProductsPage() {
               <button
                 onClick={() => {
                   // Pre-fill barcode prefix based on active category filter
-                  const prefixMap = { 'Thanka': 'YA', 'Singing Bowl': 'SB', 'Jewelleries': 'MA', 'Thanka Locket': 'TL' };
+                  const prefixMap = { 'Thanka': 'YA', 'Singing Bowl': 'SB', 'Jewelleries': 'MA', 'Thanka Locket': 'YA-LK-' };
                   const prefix = prefixMap[filterCategory] || '';
+                  const defaultName = filterCategory === 'Thanka Locket' ? 'Thanka Locket' : prefix;
                   if (prefix) {
-                    setForm(prev => ({ ...prev, barcode: prefix, name: prefix, category: filterCategory }));
+                    setForm(prev => ({ ...prev, barcode: prefix, name: defaultName, category: filterCategory }));
                   }
                   setShowAddChoice(false);
                   setShowForm(true);
@@ -1417,40 +1417,7 @@ export default function ProductsPage() {
                     type="text"
                     value={form.name}
                     onChange={(e) => {
-                      const el = e.target;
-                      const cursor = el.selectionStart;
-                      const val = el.value.toUpperCase();
-                      const prefix = getPrefixForCategory(form.category);
-                      // Prevent deleting the category prefix
-                      if (prefix && !val.startsWith(prefix)) {
-                        requestAnimationFrame(() => el.setSelectionRange(prefix.length, prefix.length));
-                        return;
-                      }
-                      const autoCat = getCategoryFromBarcode(val);
-                      setForm((prev) => ({
-                        ...prev,
-                        name: val,
-                        ...(autoCat && !prev.category ? { category: autoCat } : {}),
-                      }));
-                      requestAnimationFrame(() => el.setSelectionRange(cursor, cursor));
-                    }}
-                    onKeyDown={(e) => {
-                      const prefix = getPrefixForCategory(form.category);
-                      if (!prefix) return;
-                      const el = e.target;
-                      // Block backspace/delete if it would erase into the prefix
-                      if (e.key === 'Backspace' && el.selectionStart <= prefix.length && el.selectionEnd <= prefix.length) {
-                        e.preventDefault();
-                      }
-                      if (e.key === 'Delete' && el.selectionStart < prefix.length) {
-                        e.preventDefault();
-                      }
-                    }}
-                    onSelect={(e) => {
-                      const prefix = getPrefixForCategory(form.category);
-                      if (prefix && e.target.selectionStart < prefix.length && e.target.selectionEnd <= prefix.length) {
-                        e.target.setSelectionRange(prefix.length, prefix.length);
-                      }
+                      setForm((prev) => ({ ...prev, name: e.target.value }));
                     }}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none"
@@ -1619,15 +1586,20 @@ export default function ProductsPage() {
                               let newName = prev.name;
                               let newBarcode = prev.barcode;
                               if (!editingProduct) {
-                                if (oldPrefix && newName.startsWith(oldPrefix)) {
-                                  newName = newPrefix + newName.slice(oldPrefix.length);
-                                } else if (newPrefix && !newName.startsWith(newPrefix)) {
-                                  newName = newPrefix;
-                                }
-                                if (oldPrefix && newBarcode.startsWith(oldPrefix)) {
-                                  newBarcode = newPrefix + newBarcode.slice(oldPrefix.length);
-                                } else if (newPrefix && !newBarcode.startsWith(newPrefix)) {
-                                  newBarcode = newPrefix;
+                                if (option === 'Thanka Locket') {
+                                  newName = 'Thanka Locket';
+                                  newBarcode = 'YA-LK-';
+                                } else {
+                                  if (oldPrefix && newName.startsWith(oldPrefix)) {
+                                    newName = newPrefix + newName.slice(oldPrefix.length);
+                                  } else if (newPrefix && !newName.startsWith(newPrefix)) {
+                                    newName = newPrefix;
+                                  }
+                                  if (oldPrefix && newBarcode.startsWith(oldPrefix)) {
+                                    newBarcode = newPrefix + newBarcode.slice(oldPrefix.length);
+                                  } else if (newPrefix && !newBarcode.startsWith(newPrefix)) {
+                                    newBarcode = newPrefix;
+                                  }
                                 }
                               }
                               return { ...prev, category: option, name: newName, barcode: newBarcode };
@@ -1648,39 +1620,16 @@ export default function ProductsPage() {
                     type="text"
                     value={form.barcode}
                     onChange={(e) => {
-                      const el = e.target;
-                      const cursor = el.selectionStart;
-                      const val = el.value.toUpperCase();
-                      const prefix = getPrefixForCategory(form.category);
-                      if (prefix && !val.startsWith(prefix)) {
-                        requestAnimationFrame(() => el.setSelectionRange(prefix.length, prefix.length));
-                        return;
-                      }
+                      const val = e.target.value.toUpperCase();
                       const autoCat = getCategoryFromBarcode(val);
+                      const newCat = autoCat || form.category;
+                      const defaultName = newCat === 'Thanka Locket' ? 'Thanka Locket' : val;
                       setForm((prev) => ({
                         ...prev,
                         barcode: val,
-                        name: val,
+                        name: defaultName,
                         ...(autoCat ? { category: autoCat } : {}),
                       }));
-                      requestAnimationFrame(() => el.setSelectionRange(cursor, cursor));
-                    }}
-                    onKeyDown={(e) => {
-                      const prefix = getPrefixForCategory(form.category);
-                      if (!prefix) return;
-                      const el = e.target;
-                      if (e.key === 'Backspace' && el.selectionStart <= prefix.length && el.selectionEnd <= prefix.length) {
-                        e.preventDefault();
-                      }
-                      if (e.key === 'Delete' && el.selectionStart < prefix.length) {
-                        e.preventDefault();
-                      }
-                    }}
-                    onSelect={(e) => {
-                      const prefix = getPrefixForCategory(form.category);
-                      if (prefix && e.target.selectionStart < prefix.length && e.target.selectionEnd <= prefix.length) {
-                        e.target.setSelectionRange(prefix.length, prefix.length);
-                      }
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none font-mono uppercase"
                   />
@@ -1820,7 +1769,7 @@ export default function ProductsPage() {
 
       {/* Category filter tabs */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {[...allCats, 'Others'].map(cat => {
+        {allCats.map(cat => {
           const totalQty = categoryCounts[cat];
           if (totalQty === 0 && filterCategory !== cat) return null;
           const isActive = filterCategory === cat;
@@ -1940,83 +1889,6 @@ export default function ProductsPage() {
                 </div>
               );
             })}
-          {/* Uncategorized products */}
-          {(() => {
-            const uncategorized = productsByCategory['Others'];
-            if ((filterCategory && filterCategory !== 'Others') || uncategorized.length === 0) return null;
-            const othersLimit = visibleRows['Others'] || ROWS_PER_PAGE;
-            const visibleOthers = uncategorized.slice(0, othersLimit);
-            const othersHasMore = uncategorized.length > othersLimit;
-            return (
-              <div>
-                <h2 className="text-lg font-bold text-gray-800 mb-3">
-                  {t('other')} <span className="text-sm font-bold text-gray-400 ml-2">&nbsp;| &nbsp; {uncategorized.length} QTY</span>
-                </h2>
-                <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
-                  <table className="min-w-full border-separate border-spacing-0">
-                    <thead>
-                      <tr className="bg-gray-50/80">
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('image')}</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('name')}</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('barcode')}</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('weight')}</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('size')}</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('cost')}</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('wholesale')}</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('retail')}</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('actions')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleOthers.map((p) => (
-                        <tr key={p.id} className="transition-colors hover:bg-amber-50/60">
-                          <td className="px-5 py-4 border-b border-gray-100">
-                            {(() => {
-                              const imgs = [getImageUrl(p.image_url), getImageUrl(p.image_url_2)].filter(Boolean);
-                              return imgs.length > 0 ? (
-                                <div className="relative w-10 h-10">
-                                  <img
-                                    src={imgs[0]}
-                                    alt={p.name}
-                                    className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                    onClick={() => setPreviewImages({ images: imgs, index: 0 })}
-                                  />
-                                  {imgs.length > 1 && (
-                                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">N/A</div>
-                              );
-                            })()}
-                          </td>
-                          <td className="px-5 py-4 border-b border-gray-100 text-sm font-medium text-gray-800">{p.name}</td>
-                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600 font-mono">{p.barcode || '-'}</td>
-                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{p.weight || '-'}</td>
-                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{p.size || '-'}</td>
-                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.cost_price || 0).toFixed(2)}</td>
-                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
-                          <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
-                          <td className="px-5 py-4 border-b border-gray-100 text-sm">
-                            <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
-                            <button onClick={() => setDeleteProduct(p)} className="text-red-600 hover:text-red-800">Delete</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {othersHasMore && (
-                  <button
-                    onClick={() => setVisibleRows(prev => ({ ...prev, Others: othersLimit + ROWS_PER_PAGE }))}
-                    className="w-full mt-2 py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-[1.2rem] transition-colors"
-                  >
-                    Show More ({uncategorized.length - othersLimit} remaining)
-                  </button>
-                )}
-              </div>
-            );
-          })()}
           {products.length === 0 && (
             <div className="bg-white rounded-[1.2rem] shadow p-8 text-center text-gray-500">
               {t('noProductsFound')}

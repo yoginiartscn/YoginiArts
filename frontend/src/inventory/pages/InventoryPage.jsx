@@ -19,6 +19,15 @@ export default function InventoryPage() {
   const [locDropdownOpen, setLocDropdownOpen] = useState(false);
   const locDropdownRef = useRef(null);
   const [filterCategory, setFilterCategory] = useState('');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const fetchData = async () => {
     try {
@@ -116,7 +125,37 @@ export default function InventoryPage() {
     <div>
       {/* Header: title centered, location + stock-in on right */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-        <div className="flex-1" />
+        <div className="flex-1 flex items-center gap-2">
+          {/* Search toggle */}
+          <div className="relative flex items-center">
+            <button
+              onClick={() => {
+                setShowSearch((v) => {
+                  if (v) { setSearch(''); setDebouncedSearch(''); }
+                  else setTimeout(() => searchInputRef.current?.focus(), 50);
+                  return !v;
+                });
+              }}
+              className="p-2 rounded-[1.2rem] hover:bg-gray-100 text-gray-500 hover:text-amber-700 transition-colors"
+              title="Search"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8" strokeWidth={2} />
+                <path strokeLinecap="round" strokeWidth={2} d="M21 21l-4.35-4.35" />
+              </svg>
+            </button>
+            <div className={`overflow-hidden transition-all duration-200 ${showSearch ? 'w-48 opacity-100' : 'w-0 opacity-0'}`}>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name or barcode..."
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-[1.2rem] text-sm focus:outline-none focus:border-amber-400"
+              />
+            </div>
+          </div>
+        </div>
         <h1 className="text-2xl font-bold text-gray-800 text-center">{t('inventory')}</h1>
         <div className="flex-1 flex items-center justify-end gap-3">
           {/* Custom Location Dropdown */}
@@ -181,11 +220,12 @@ export default function InventoryPage() {
       <div className="flex flex-wrap gap-2 mb-4">
         {(() => {
           const cats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries', 'Others'];
+          const knownCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
           return cats.map(cat => {
             const isOthers = cat === 'Others';
             const catInv = inventory.filter(inv => {
               const pCat = inv.product?.category;
-              if (isOthers) return !pCat || !['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].includes(pCat);
+              if (isOthers) return !pCat || pCat === 'Others' || !knownCats.includes(pCat);
               return pCat === cat;
             });
             const totalQty = catInv.reduce((sum, inv) => sum + inv.quantity, 0);
@@ -290,10 +330,23 @@ export default function InventoryPage() {
             </thead>
             <tbody>
               {inventory.filter(inv => {
-                if (!filterCategory) return true;
                 const pCat = inv.product?.category;
-                if (filterCategory === 'Others') return !pCat || !['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'].includes(pCat);
-                return pCat === filterCategory;
+                const knownCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
+                if (filterCategory) {
+                  if (filterCategory === 'Others') {
+                    if (pCat && pCat !== 'Others' && knownCats.includes(pCat)) return false;
+                  } else {
+                    if (pCat !== filterCategory) return false;
+                  }
+                }
+                if (debouncedSearch) {
+                  const q = debouncedSearch.toLowerCase();
+                  const matchName = inv.product?.name?.toLowerCase().includes(q);
+                  const matchBarcode = inv.product?.barcode?.toLowerCase().includes(q);
+                  const matchLocation = inv.location?.name?.toLowerCase().includes(q);
+                  if (!matchName && !matchBarcode && !matchLocation) return false;
+                }
+                return true;
               }).map((inv) => (
                 <tr key={inv.id} className="transition-colors hover:bg-amber-50/60">
                   <td className="px-5 py-4 border-b border-gray-100">
