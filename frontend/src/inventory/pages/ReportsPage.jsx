@@ -9,14 +9,21 @@ export default function ReportsPage() {
   const [transactions, setTransactions] = useState([]);
   const [locations, setLocations] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
+  const [totalSales, setTotalSales] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ type: '', start_date: '', end_date: '' });
+  const [filters, setFilters] = useState({ type: '', location_id: '', start_date: '', end_date: '' });
+  const [search, setSearch] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const searchInputRef = useRef(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // Custom filter dropdown state
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
   const typeDropdownRef = useRef(null);
+  const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
+  const locationDropdownRef = useRef(null);
 
-  // Close dropdown on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
     if (!typeDropdownOpen) return;
     const handleClick = (e) => {
@@ -27,6 +34,17 @@ export default function ReportsPage() {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [typeDropdownOpen]);
+
+  useEffect(() => {
+    if (!locationDropdownOpen) return;
+    const handleClick = (e) => {
+      if (locationDropdownRef.current && !locationDropdownRef.current.contains(e.target)) {
+        setLocationDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [locationDropdownOpen]);
 
   // Report Download modal state
   const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -41,12 +59,15 @@ export default function ReportsPage() {
     try {
       const params = { page, limit: 25 };
       if (filters.type) params.type = filters.type;
+      if (filters.location_id) params.location_id = filters.location_id;
       if (filters.start_date) params.start_date = filters.start_date;
       if (filters.end_date) params.end_date = filters.end_date;
+      if (debouncedSearch) params.search = debouncedSearch;
 
       const res = await reportsApi.getTransactions(api, params);
       setTransactions(res.data.data);
       setPagination(res.data.pagination);
+      setTotalSales(res.data.total_sales || 0);
     } catch (err) {
       console.error(err);
     } finally {
@@ -58,16 +79,28 @@ export default function ReportsPage() {
     Promise.all([fetchTransactions(), locationsApi.getAll(api).then((r) => setLocations(r.data.data))]);
   }, []);
 
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    fetchTransactions(1);
+  }, [debouncedSearch]);
+
   const updateFilter = (key, value) => {
     const newFilters = { ...filters, [key]: value };
     setFilters(newFilters);
     setLoading(true);
     const params = { page: 1, limit: 25 };
     if (newFilters.type) params.type = newFilters.type;
+    if (newFilters.location_id) params.location_id = newFilters.location_id;
     if (newFilters.start_date) params.start_date = newFilters.start_date;
     if (newFilters.end_date) params.end_date = newFilters.end_date;
+    if (debouncedSearch) params.search = debouncedSearch;
     reportsApi.getTransactions(api, params)
-      .then((res) => { setTransactions(res.data.data); setPagination(res.data.pagination); })
+      .then((res) => { setTransactions(res.data.data); setPagination(res.data.pagination); setTotalSales(res.data.total_sales || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
   };
@@ -126,15 +159,52 @@ export default function ReportsPage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">{t('reports')}</h1>
-        <button
-          onClick={openDownloadModal}
-          className="px-5 py-2.5 bg-[#800020] text-white rounded-full hover:bg-[#6b001a] font-medium text-sm flex items-center gap-2 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          Report Download
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Search toggle + slide-in input */}
+          <div className="relative flex items-center">
+            <button
+              onClick={() => {
+                const next = !showSearch;
+                setShowSearch(next);
+                if (next) {
+                  setTimeout(() => searchInputRef.current?.focus(), 310);
+                } else {
+                  setSearch('');
+                }
+              }}
+              className="w-10 h-10 flex items-center justify-center rounded-[1.2rem] bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors flex-shrink-0"
+            >
+              {showSearch ? (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              )}
+            </button>
+            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showSearch ? 'w-64 opacity-100 ml-1' : 'w-0 opacity-0'}`}>
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search by product name or barcode..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none text-sm"
+              />
+            </div>
+          </div>
+          <button
+            onClick={openDownloadModal}
+            className="px-5 py-2.5 bg-[#800020] text-white rounded-full hover:bg-[#6b001a] font-medium text-sm flex items-center gap-2 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Report Download
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -180,6 +250,42 @@ export default function ReportsPage() {
           )}
         </div>
 
+        {/* Location - Custom Dropdown */}
+        <div className="relative" ref={locationDropdownRef}>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
+          <button
+            onClick={() => setLocationDropdownOpen(!locationDropdownOpen)}
+            className="px-4 py-2.5 bg-[#800020] rounded-full text-sm text-left flex items-center gap-6 hover:bg-[#6b001a] transition-colors min-w-[160px] justify-between"
+          >
+            <span className="text-white font-medium">
+              {filters.location_id ? (locations.find(l => String(l.id) === String(filters.location_id))?.name || t('all')) : t('all')}
+            </span>
+            <svg className={`w-4 h-4 text-white/70 transition-transform ${locationDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {locationDropdownOpen && (
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 z-50 overflow-hidden min-w-[180px]">
+              {[{ id: '', name: t('all') }, ...locations].map((loc) => (
+                <div
+                  key={loc.id}
+                  onClick={() => { updateFilter('location_id', loc.id); setLocationDropdownOpen(false); }}
+                  className={`px-4 py-2.5 text-sm cursor-pointer flex items-center justify-between hover:bg-gray-50 ${
+                    String(filters.location_id) === String(loc.id) ? 'bg-[#800020]/5 text-[#800020] font-medium' : 'text-gray-700'
+                  }`}
+                >
+                  {loc.name}
+                  {String(filters.location_id) === String(loc.id) && (
+                    <svg className="w-4 h-4 text-[#800020]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* From Date */}
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">{t('fromDate')}</label>
@@ -203,9 +309,9 @@ export default function ReportsPage() {
         </div>
 
         {/* Clear filters */}
-        {(filters.type || filters.start_date || filters.end_date) && (
+        {(filters.type || filters.location_id || filters.start_date || filters.end_date) && (
           <button
-            onClick={() => { setFilters({ type: '', start_date: '', end_date: '' }); fetchTransactions(1); }}
+            onClick={() => { setFilters({ type: '', location_id: '', start_date: '', end_date: '' }); fetchTransactions(1); }}
             className="px-3 py-2.5 text-gray-400 hover:text-gray-600 text-sm transition-colors"
             title="Clear filters"
           >
@@ -214,6 +320,14 @@ export default function ReportsPage() {
             </svg>
           </button>
         )}
+
+        {/* Total Sales */}
+        <div className="ml-auto flex items-end pb-0.5">
+          <div className="flex items-center gap-2 px-5 py-2.5 bg-[#800020]/5 border border-[#800020]/20 rounded-full">
+            <span className="text-xs font-medium text-gray-500">Total Sales:</span>
+            <span className="text-sm font-bold text-[#800020]">¥{totalSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+        </div>
       </div>
 
       {/* Transactions Table */}

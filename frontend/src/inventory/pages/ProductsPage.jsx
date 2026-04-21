@@ -79,7 +79,6 @@ export default function ProductsPage() {
   const globalScanBufferRef = useRef('');
   const globalLastKeyTimeRef = useRef(0);
   const globalScanTimerRef = useRef(null);
-  const scrollToProductRef = useRef(null); // barcode of product to scroll to after table re-render
 
   // Debounce search input — wait 400ms after user stops typing
   useEffect(() => {
@@ -99,33 +98,8 @@ export default function ProductsPage() {
         );
         data = data.filter(p => productIdsAtLocation.has(p.id));
       }
-      const scrollBarcode = scrollToProductRef.current;
       setProducts(data);
-      if (scrollBarcode) {
-        const target = data.find(p => p.barcode && p.barcode.toLowerCase() === scrollBarcode.toLowerCase());
-        if (target) {
-          const knownCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries', 'Others'];
-          const cat = target.category && knownCats.includes(target.category) ? target.category : 'Others';
-          // Get items in same category to find position
-          const catItems = data.filter(p => {
-            const pCat = p.category && knownCats.includes(p.category) ? p.category : 'Others';
-            return pCat === cat;
-          });
-          const idx = catItems.findIndex(p => p.id === target.id);
-          const neededRows = idx >= 0 ? idx + 1 : catItems.length;
-          setVisibleRows(neededRows > ROWS_PER_PAGE ? { [cat]: neededRows + 5 } : {});
-          // Scroll to the product row after render
-          setTimeout(() => {
-            const row = document.querySelector(`[data-product-id="${target.id}"]`);
-            if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 300);
-        } else {
-          setVisibleRows({});
-        }
-        scrollToProductRef.current = null;
-      } else {
-        setVisibleRows({});
-      }
+      setVisibleRows({});
     } catch (err) {
       console.error(err);
     } finally {
@@ -224,7 +198,6 @@ export default function ProductsPage() {
       } else {
         await productsApi.create(api, submitData, imageFile, imageFile2);
       }
-      scrollToProductRef.current = form.barcode;
       resetForm();
       fetchProducts();
     } catch (err) {
@@ -718,9 +691,6 @@ export default function ProductsPage() {
     }
 
     setBatchAdding(false);
-    // Scroll to the last added item
-    const lastAdded = newItems[newItems.length - 1];
-    if (lastAdded) scrollToProductRef.current = lastAdded.barcode;
     setBatchScanned([]);
     setShowScanner(false);
     fetchProducts();
@@ -813,7 +783,6 @@ export default function ProductsPage() {
         location_id: guangzhou.id,
         quantity: duplicateQty,
       });
-      scrollToProductRef.current = duplicateProduct.barcode;
       setDuplicateProduct(null);
       fetchProducts();
     } catch (err) {

@@ -179,8 +179,8 @@ function setCell(row, col, value, font, align) {
 // ─── GET /transactions ─────────────────────────────────────────────────────────
 router.get('/transactions', authenticate, async (req, res) => {
   try {
-    const { type, product_id, location_id, start_date, end_date, page = 1, limit = 50 } = req.query;
-    const txCacheKey = `transactions:${type||''}:${product_id||''}:${location_id||''}:${start_date||''}:${end_date||''}:${page}:${limit}`;
+    const { type, product_id, location_id, start_date, end_date, search, page = 1, limit = 50 } = req.query;
+    const txCacheKey = `transactions:${type||''}:${product_id||''}:${location_id||''}:${start_date||''}:${end_date||''}:${search||''}:${page}:${limit}`;
     const txCached = cache.get(txCacheKey);
     if (txCached) return res.json(txCached);
 
@@ -199,19 +199,32 @@ router.get('/transactions', authenticate, async (req, res) => {
       if (end_date) where.createdAt[Op.lte] = new Date(end_date);
     }
 
+    const productWhere = search
+      ? { [Op.or]: [{ name: { [Op.iLike]: `%${search}%` } }, { barcode: { [Op.iLike]: `%${search}%` } }] }
+      : {};
+
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    const { count, rows } = await Transaction.findAndCountAll({
-      where,
-      include: [
-        { model: Product, as: 'product', attributes: ['id', 'name', 'barcode', 'image_url', 'image_url_2'] },
-        { model: Location, as: 'fromLocation', attributes: ['id', 'name'] },
-        { model: Location, as: 'toLocation', attributes: ['id', 'name'] },
-        { model: User, as: 'createdByUser', attributes: ['id', 'name'] },
-      ],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset,
-    });
+    const { sequelize } = Transaction;
+    const [{ count, rows }, salesSum] = await Promise.all([
+      Transaction.findAndCountAll({
+        where,
+        include: [
+          { model: Product, as: 'product', attributes: ['id', 'name', 'barcode', 'image_url', 'image_url_2'], where: productWhere, required: !!search },
+          { model: Location, as: 'fromLocation', attributes: ['id', 'name'] },
+          { model: Location, as: 'toLocation', attributes: ['id', 'name'] },
+          { model: User, as: 'createdByUser', attributes: ['id', 'name'] },
+        ],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      Transaction.findOne({
+        where: { ...where, type: 'sale' },
+        include: search ? [{ model: Product, as: 'product', where: productWhere, required: true, attributes: [] }] : [],
+        attributes: [[sequelize.fn('SUM', sequelize.literal('unit_price * quantity')), 'total']],
+        raw: true,
+      }),
+    ]);
 
     const result = {
       success: true,
@@ -222,6 +235,7 @@ router.get('/transactions', authenticate, async (req, res) => {
         limit: parseInt(limit),
         pages: Math.ceil(count / parseInt(limit)),
       },
+      total_sales: parseFloat(salesSum?.total || 0),
     };
     cache.set(txCacheKey, result, 3000);
     res.json(result);
