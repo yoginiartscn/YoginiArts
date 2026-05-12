@@ -92,16 +92,16 @@ router.post('/', authenticate, optionalUpload([{ name: 'image', maxCount: 1 }, {
       return res.status(400).json({ success: false, message: 'Product name is required' });
     }
 
-    // Use uploaded file (→ Supabase), or provided URL (ignore ephemeral blob: URLs)
+    // Use uploaded file (→ Supabase), or provided URL (ignore ephemeral blob: URLs).
+    // Parallelize the two Supabase uploads.
     let finalImageUrl = (image_url && !image_url.startsWith('blob:')) ? image_url : null;
-    if (req.files?.image?.[0]) {
-      finalImageUrl = await uploadImage(req.files.image[0].buffer, req.files.image[0].originalname);
-    }
-
     let finalImageUrl2 = (image_url_2 && !image_url_2.startsWith('blob:')) ? image_url_2 : null;
-    if (req.files?.image2?.[0]) {
-      finalImageUrl2 = await uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname);
-    }
+    const [newUrl1, newUrl2] = await Promise.all([
+      req.files?.image?.[0] ? uploadImage(req.files.image[0].buffer, req.files.image[0].originalname) : Promise.resolve(null),
+      req.files?.image2?.[0] ? uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname) : Promise.resolve(null),
+    ]);
+    if (newUrl1) finalImageUrl = newUrl1;
+    if (newUrl2) finalImageUrl2 = newUrl2;
 
     const product = await Product.create({
       name,
@@ -178,21 +178,22 @@ router.put('/:id', authenticate, optionalUpload([{ name: 'image', maxCount: 1 },
 
     const { name, description, image_url, image_url_2, barcode, cost_price, retail_price, wholesale_price, category, weight, size } = req.body;
 
-    // Use uploaded file (→ Supabase), or provided URL, or keep existing (ignore ephemeral blob: URLs)
+    // Use uploaded file (→ Supabase), or provided URL, or keep existing (ignore ephemeral blob: URLs).
+    // Run both Supabase uploads in parallel — sequential uploads doubled the wait on dual-image saves.
     let finalImageUrl = image_url !== undefined ? ((image_url && image_url.startsWith('blob:')) ? product.image_url : image_url) : product.image_url;
-    if (req.files?.image?.[0]) {
-      finalImageUrl = await uploadImage(req.files.image[0].buffer, req.files.image[0].originalname);
-      if (product.image_url) {
-        deleteImage(product.image_url).catch(() => {});
-      }
-    }
-
     let finalImageUrl2 = image_url_2 !== undefined ? ((image_url_2 && image_url_2.startsWith('blob:')) ? product.image_url_2 : image_url_2) : product.image_url_2;
-    if (req.files?.image2?.[0]) {
-      finalImageUrl2 = await uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname);
-      if (product.image_url_2) {
-        deleteImage(product.image_url_2).catch(() => {});
-      }
+
+    const [newUrl1, newUrl2] = await Promise.all([
+      req.files?.image?.[0] ? uploadImage(req.files.image[0].buffer, req.files.image[0].originalname) : Promise.resolve(null),
+      req.files?.image2?.[0] ? uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname) : Promise.resolve(null),
+    ]);
+    if (newUrl1) {
+      finalImageUrl = newUrl1;
+      if (product.image_url) deleteImage(product.image_url).catch(() => {});
+    }
+    if (newUrl2) {
+      finalImageUrl2 = newUrl2;
+      if (product.image_url_2) deleteImage(product.image_url_2).catch(() => {});
     }
 
     await product.update({

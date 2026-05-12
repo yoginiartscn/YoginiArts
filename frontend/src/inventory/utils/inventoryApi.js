@@ -7,11 +7,12 @@ const API_BASE = import.meta.env.VITE_API_URL
 // Server origin for static files (uploads) — strip /api suffix from API_BASE
 const SERVER_ORIGIN = API_BASE.replace(/\/api\/?$/, '');
 
-// Resolve image URLs — converts relative /uploads/... paths to full URLs in development
+// Resolve image URLs — converts relative /uploads/... paths to full URLs in development.
+// blob: URLs are ephemeral but valid for the current session, and we use them for optimistic UI
+// during product saves (so the new image appears instantly while upload runs in the background).
 export const getImageUrl = (url) => {
   if (!url) return null;
-  // blob: URLs are ephemeral and invalid after the session that created them
-  if (url.startsWith('blob:')) return null;
+  if (url.startsWith('blob:')) return url;
   if (url.startsWith('http')) return url;
   return `${SERVER_ORIGIN}${url}`;
 };

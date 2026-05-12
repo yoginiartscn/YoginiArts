@@ -377,17 +377,47 @@ export default function ProductsPage() {
       setScanMode('device');
       return;
     }
+    const submitData = { ...form, quantity: Math.max(1, parseInt(form.quantity) || 1) };
+    const wasEditing = !!editingProduct;
+    const editingId = editingProduct?.id;
+    const fileA = imageFile;
+    const fileB = imageFile2;
+    const previewA = imagePreview;
+    const previewB = imagePreview2;
+    // Optimistic UI: if editing, patch the list immediately with the new values and the local
+    // blob preview so the card reflects the change before the network round-trip finishes.
+    if (wasEditing) {
+      setProducts(prev => prev.map(p => p.id === editingId
+        ? {
+            ...p,
+            ...submitData,
+            image_url: fileA && previewA ? previewA : (submitData.image_url || p.image_url),
+            image_url_2: fileB && previewB ? previewB : (submitData.image_url_2 || p.image_url_2),
+          }
+        : p));
+    }
+    // Close the panel immediately — the upload happens in the background.
+    resetForm();
     try {
-      const submitData = { ...form, quantity: Math.max(1, parseInt(form.quantity) || 1) };
-      if (editingProduct) {
-        await productsApi.update(api, editingProduct.id, submitData, imageFile, imageFile2);
+      const res = wasEditing
+        ? await productsApi.update(api, editingId, submitData, fileA, fileB)
+        : await productsApi.create(api, submitData, fileA, fileB);
+      // Patch the single updated product into the list (avoids a full refetch).
+      const saved = res?.data?.data;
+      if (saved) {
+        setProducts(prev => {
+          const idx = prev.findIndex(p => p.id === saved.id);
+          if (idx === -1) return [saved, ...prev];
+          const next = prev.slice();
+          next[idx] = { ...prev[idx], ...saved };
+          return next;
+        });
       } else {
-        await productsApi.create(api, submitData, imageFile, imageFile2);
+        fetchProducts();
       }
-      resetForm();
-      fetchProducts();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to save product');
+      fetchProducts();
     }
   };
 
@@ -954,26 +984,68 @@ export default function ProductsPage() {
     }
   };
 
-  const applyProductImageFiles = (files) => {
-    const imgs = Array.from(files || []).filter(f => f && f.type && f.type.startsWith('image/'));
-    if (imgs.length === 0) return;
-    if (!imagePreview && !imageFile) {
-      setImagePreview(URL.createObjectURL(imgs[0]));
-      setImageFile(imgs[0]);
-      if (imgs[1]) {
-        setImagePreview2(URL.createObjectURL(imgs[1]));
-        setImageFile2(imgs[1]);
+  // Re-encode large PNGs to high-quality JPEG before upload.
+  // Browsers serialize clipboard images as PNG, so pasted screenshots can be 5–15 MB.
+  // Quality 0.92 is visually indistinguishable but typically 80–95% smaller, making the
+  // upload finish in seconds instead of minutes. Camera/gallery JPEGs are returned untouched.
+  const maybeCompressImage = async (file) => {
+    if (!file || !file.type || !file.type.startsWith('image/')) return file;
+    if (file.type !== 'image/png' || file.size < 800 * 1024) return file;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close && bitmap.close();
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+      if (!blob || blob.size >= file.size) return file;
+      const baseName = (file.name || 'pasted-image').replace(/\.[^.]+$/, '');
+      return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+    } catch {
+      return file;
+    }
+  };
+
+  const applyProductImageFiles = async (files) => {
+    const raw = Array.from(files || []).filter(f => f && f.type && f.type.startsWith('image/'));
+    if (raw.length === 0) return;
+    const previews = raw.map((f) => URL.createObjectURL(f));
+    const slot = (!imagePreview && !imageFile)
+      ? 'first'
+      : (!imagePreview2 && !imageFile2)
+        ? 'second'
+        : 'replaceFirst';
+    // Set preview AND original file immediately, so the form is submit-ready even before
+    // compression finishes. Compression then swaps in a smaller file in the background.
+    if (slot === 'first') {
+      setImagePreview(previews[0]);
+      setImageFile(raw[0]);
+      if (previews[1]) {
+        setImagePreview2(previews[1]);
+        setImageFile2(raw[1]);
       }
-    } else if (!imagePreview2 && !imageFile2) {
-      setImagePreview2(URL.createObjectURL(imgs[0]));
-      setImageFile2(imgs[0]);
+    } else if (slot === 'second') {
+      setImagePreview2(previews[0]);
+      setImageFile2(raw[0]);
     } else {
-      setImagePreview(URL.createObjectURL(imgs[0]));
-      setImageFile(imgs[0]);
-      if (imgs[1]) {
-        setImagePreview2(URL.createObjectURL(imgs[1]));
-        setImageFile2(imgs[1]);
+      setImagePreview(previews[0]);
+      setImageFile(raw[0]);
+      if (previews[1]) {
+        setImagePreview2(previews[1]);
+        setImageFile2(raw[1]);
       }
+    }
+    const compressed = await Promise.all(raw.map((f) => maybeCompressImage(f)));
+    if (slot === 'first') {
+      if (compressed[0] !== raw[0]) setImageFile(compressed[0]);
+      if (compressed[1] && compressed[1] !== raw[1]) setImageFile2(compressed[1]);
+    } else if (slot === 'second') {
+      if (compressed[0] !== raw[0]) setImageFile2(compressed[0]);
+    } else {
+      if (compressed[0] !== raw[0]) setImageFile(compressed[0]);
+      if (compressed[1] && compressed[1] !== raw[1]) setImageFile2(compressed[1]);
     }
   };
 
@@ -1754,11 +1826,7 @@ export default function ProductsPage() {
                         ref={productImageRef2}
                         className="hidden"
                         onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            setImagePreview2(URL.createObjectURL(file));
-                            setImageFile2(file);
-                          }
+                          applyProductImageFiles(e.target.files);
                           e.target.value = '';
                         }}
                       />
