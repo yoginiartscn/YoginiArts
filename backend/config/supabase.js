@@ -96,8 +96,17 @@ async function downloadImage(publicUrl) {
 }
 
 function getMimeType(ext) {
-  const types = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' };
-  return types[ext] || 'image/jpeg';
+  const types = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.heic': 'image/heic',
+    '.heif': 'image/heif',
+    '.avif': 'image/avif',
+  };
+  return types[ext] || 'application/octet-stream';
 }
 
 module.exports = { uploadImage, deleteImage, downloadImage, BUCKET };

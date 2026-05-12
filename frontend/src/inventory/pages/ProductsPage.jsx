@@ -4,6 +4,168 @@ import { useApi } from '../hooks/useApi';
 import { productsApi, reportsApi, locationsApi, getImageUrl } from '../utils/inventoryApi';
 import { useLanguage } from '../context/LanguageContext';
 
+const MobileProductCard = React.memo(function MobileProductCard({ p, showWeight, showDescription, t, onEdit, onDelete, onPreview, onDescription }) {
+  const imgs = [getImageUrl(p.image_url), getImageUrl(p.image_url_2)].filter(Boolean);
+  return (
+    <div
+      data-product-id={p.id}
+      className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm"
+    >
+      <div className="flex items-start gap-3">
+        {imgs.length > 0 ? (
+          <div className="relative w-16 h-16 flex-shrink-0">
+            <img
+              src={imgs[0]}
+              alt={p.name}
+              loading="lazy"
+              className="w-16 h-16 rounded-xl object-cover"
+              onClick={() => onPreview({ images: imgs, index: 0 })}
+            />
+            {imgs.length > 1 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
+            )}
+          </div>
+        ) : (
+          <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400 text-xs flex-shrink-0">N/A</div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <span className="font-semibold text-gray-800 truncate">{p.name}</span>
+            <div className="flex gap-1.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => onEdit(p)}
+                aria-label={t('edit') || 'Edit'}
+                title={t('edit') || 'Edit'}
+                className="inline-flex items-center justify-center w-8 h-8 rounded-[0.9rem] bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(p)}
+                aria-label={t('delete') || 'Delete'}
+                title={t('delete') || 'Delete'}
+                className="inline-flex items-center justify-center w-8 h-8 rounded-[0.9rem] bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                  <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="mt-1 text-xs text-gray-500 font-mono truncate">{p.barcode || '-'}</div>
+          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+            {showWeight && (
+              <div className="truncate"><span className="text-gray-500">{t('weight')}:</span> <span className="text-gray-700">{p.weight || '-'}</span></div>
+            )}
+            <div className="truncate"><span className="text-gray-500">{t('size')}:</span> <span className="text-gray-700">{p.size || '-'}</span></div>
+            <div className="truncate"><span className="text-gray-500">{t('cost')}:</span> <span className="text-gray-700">{parseFloat(p.cost_price || 0).toFixed(2)}</span></div>
+            <div className="truncate"><span className="text-gray-500">{t('wholesale')}:</span> <span className="text-gray-700">{parseFloat(p.wholesale_price || 0).toFixed(2)}</span></div>
+            <div className="truncate col-span-2"><span className="text-gray-500">{t('retail')}:</span> <span className="text-gray-800 font-semibold">{parseFloat(p.retail_price || 0).toFixed(2)}</span></div>
+          </div>
+          {showDescription && p.description && (
+            <button
+              onClick={() => onDescription(p)}
+              className="mt-2 text-xs text-amber-700 hover:text-amber-900 underline underline-offset-2 text-left truncate block max-w-full"
+              title={p.description}
+            >
+              {p.description.length > 40 ? p.description.slice(0, 40) + '…' : p.description}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+function BatchScanCard({ item, onEdit, onDelete }) {
+  const matched = !!item.matched;
+  const extra = [
+    item.weight ? { label: 'Weight', value: item.weight } : null,
+    item.size ? { label: 'Size', value: item.size } : null,
+    item.retail_price ? { label: 'Retail', value: item.retail_price } : null,
+    item.wholesale_price ? { label: 'Wholesale', value: item.wholesale_price } : null,
+    item.cost_price ? { label: 'Cost', value: item.cost_price } : null,
+    item.quantity ? { label: 'Qty', value: item.quantity } : null,
+  ].filter(Boolean);
+  return (
+    <div className={`rounded-2xl border p-3 transition-colors ${matched ? 'border-blue-200 bg-blue-50/40' : 'border-gray-200 bg-white hover:bg-amber-50/30'}`}>
+      <div className="flex items-start gap-3">
+        {item.imagePreview ? (
+          <img src={item.imagePreview} alt="" className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
+        ) : (
+          <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <line x1="6" y1="8" x2="6" y2="16" />
+              <line x1="9" y1="8" x2="9" y2="16" />
+              <line x1="12" y1="8" x2="12" y2="16" />
+              <line x1="15" y1="8" x2="15" y2="16" />
+              <line x1="18" y1="8" x2="18" y2="16" />
+            </svg>
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {matched && <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" title="Exists" />}
+              <span className={`font-semibold truncate ${matched ? 'text-blue-700' : 'text-gray-800'}`}>
+                {item.name || '-'}
+              </span>
+            </div>
+            <div className="flex gap-1.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={onEdit}
+                aria-label="Edit"
+                title="Edit"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[0.9rem] bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-medium transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+                <span className="hidden sm:inline">Edit</span>
+              </button>
+              <button
+                type="button"
+                onClick={onDelete}
+                aria-label="Delete"
+                title="Delete"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[0.9rem] bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 text-xs font-medium transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                  <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                </svg>
+                <span className="hidden sm:inline">Delete</span>
+              </button>
+            </div>
+          </div>
+          <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+            <div className="truncate"><span className="text-gray-500">Barcode:</span> <span className="font-mono text-gray-700">{item.barcode}</span></div>
+            <div className="truncate"><span className="text-gray-500">Category:</span> <span className="text-gray-700">{item.category || '-'}</span></div>
+            {extra.map((f, i) => (
+              <div key={i} className="truncate"><span className="text-gray-500">{f.label}:</span> <span className="text-gray-700">{f.value}</span></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProductsPage() {
   const api = useApi();
   const { t, td } = useLanguage();
@@ -20,6 +182,7 @@ export default function ProductsPage() {
   const [uploadError, setUploadError] = useState('');
   const [matchedProduct, setMatchedProduct] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isFormDragging, setIsFormDragging] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [form, setForm] = useState({
     name: '', description: '', image_url: '', image_url_2: '', barcode: '',
@@ -52,8 +215,10 @@ export default function ProductsPage() {
   const categoryOptions = ['Singing Bowl', 'Thanka', 'Jewelleries', 'Thanka Locket', 'Others'];
   const productImageRef = useRef(null);
   const productImageRef2 = useRef(null);
+  const productImageCameraRef = useRef(null);
   const [imageFile, setImageFile] = useState(null);
   const [imageFile2, setImageFile2] = useState(null);
+  const [showImagePickerChoice, setShowImagePickerChoice] = useState(false);
 
   const [locations, setLocations] = useState([]);
   const [filterLocation, setFilterLocation] = useState('');
@@ -76,6 +241,18 @@ export default function ProductsPage() {
   const scanTimerRef = useRef(null);
   const lastKeyTimeRef = useRef(0);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+
+  const isMobileDevice = () => {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua)) return true;
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(pointer: coarse) and (max-width: 820px)').matches;
+    }
+    return false;
+  };
+  const isMobile = useMemo(() => isMobileDevice(), []);
   const globalScanBufferRef = useRef('');
   const globalLastKeyTimeRef = useRef(0);
   const globalScanTimerRef = useRef(null);
@@ -126,18 +303,9 @@ export default function ProductsPage() {
     setShowForm(false);
   };
 
-  const handleEdit = async (product) => {
-    // Fetch current inventory quantity for this product
-    let qty = 1;
-    try {
-      const invRes = await api.get('/inventory');
-      const invData = invRes.data.data || [];
-      const totalQty = invData
-        .filter(inv => inv.product_id === product.id || inv.product?.id === product.id)
-        .reduce((sum, inv) => sum + inv.quantity, 0);
-      if (totalQty > 0) qty = totalQty;
-    } catch { /* default to 1 */ }
-
+  const handleEdit = useCallback((product) => {
+    // Open the modal immediately with a sensible default quantity; refresh from /inventory in the background.
+    const initialQty = product.quantity && product.quantity > 0 ? product.quantity : 1;
     setForm({
       name: product.name || '',
       description: product.description || '',
@@ -150,7 +318,7 @@ export default function ProductsPage() {
       category: product.category || '',
       weight: product.weight || '',
       size: product.size || '',
-      quantity: qty,
+      quantity: initialQty,
     });
     setImagePreview(getImageUrl(product.image_url) || null);
     setImagePreview2(getImageUrl(product.image_url_2) || null);
@@ -158,7 +326,25 @@ export default function ProductsPage() {
     setImageFile2(null);
     setEditingProduct(product);
     setShowForm(true);
-  };
+
+    // Fetch real total quantity in the background and patch the field once it arrives.
+    (async () => {
+      try {
+        const invRes = await api.get('/inventory');
+        const invData = invRes.data.data || [];
+        const totalQty = invData
+          .filter(inv => inv.product_id === product.id || inv.product?.id === product.id)
+          .reduce((sum, inv) => sum + inv.quantity, 0);
+        if (totalQty > 0) {
+          setForm(prev => (prev && prev.barcode === (product.barcode || '') ? { ...prev, quantity: totalQty } : prev));
+        }
+      } catch { /* leave the default */ }
+    })();
+  }, [api]);
+
+  const handleDescriptionPopup = useCallback((p) => {
+    setDescriptionPopup({ name: p.name, description: p.description });
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -319,6 +505,29 @@ export default function ProductsPage() {
     setBatchEditIndex(null);
     scanBufferRef.current = '';
     setShowScanner(true);
+  };
+
+  // Mobile: open the rear camera straight away to scan a barcode. Initializes scanner state
+  // only on the first launch; subsequent taps (from inside the panel) just re-open the camera
+  // and append the new scan to the existing batch.
+  const triggerMobileCameraScan = () => {
+    if (!showScanner) {
+      setShowAddChoice(false);
+      setScannedBarcode('');
+      setScanStatus('waiting');
+      setScanMode('device');
+      setUploadPreview(null);
+      setUploadError('');
+      setMatchedProduct(null);
+      setBatchScanned([]);
+      setBatchScanning(false);
+      setBatchProgress({ done: 0, total: 0 });
+      setBatchAdding(false);
+      setBatchEditIndex(null);
+      scanBufferRef.current = '';
+      setShowScanner(true);
+    }
+    cameraInputRef.current?.click();
   };
 
   // Global barcode scanner listener — auto-opens scanner modal with batch table
@@ -745,6 +954,74 @@ export default function ProductsPage() {
     }
   };
 
+  const applyProductImageFiles = (files) => {
+    const imgs = Array.from(files || []).filter(f => f && f.type && f.type.startsWith('image/'));
+    if (imgs.length === 0) return;
+    if (!imagePreview && !imageFile) {
+      setImagePreview(URL.createObjectURL(imgs[0]));
+      setImageFile(imgs[0]);
+      if (imgs[1]) {
+        setImagePreview2(URL.createObjectURL(imgs[1]));
+        setImageFile2(imgs[1]);
+      }
+    } else if (!imagePreview2 && !imageFile2) {
+      setImagePreview2(URL.createObjectURL(imgs[0]));
+      setImageFile2(imgs[0]);
+    } else {
+      setImagePreview(URL.createObjectURL(imgs[0]));
+      setImageFile(imgs[0]);
+      if (imgs[1]) {
+        setImagePreview2(URL.createObjectURL(imgs[1]));
+        setImageFile2(imgs[1]);
+      }
+    }
+  };
+
+  const handleFormDragOver = (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
+      e.preventDefault();
+      setIsFormDragging(true);
+    }
+  };
+
+  const handleFormDragLeave = (e) => {
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setIsFormDragging(false);
+  };
+
+  const handleFormDrop = (e) => {
+    e.preventDefault();
+    setIsFormDragging(false);
+    applyProductImageFiles(e.dataTransfer.files);
+  };
+
+  useEffect(() => {
+    if (!showForm) return;
+    const onPaste = (e) => {
+      const target = e.target;
+      const tag = target && target.tagName;
+      if (tag === 'INPUT' && target.type !== 'file' && target.type !== 'button') {
+        if (!(e.clipboardData && Array.from(e.clipboardData.items || []).some(i => i.kind === 'file'))) {
+          return;
+        }
+      }
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files = [];
+      for (const item of items) {
+        if (item.kind === 'file') {
+          const f = item.getAsFile();
+          if (f && f.type && f.type.startsWith('image/')) files.push(f);
+        }
+      }
+      if (files.length === 0) return;
+      e.preventDefault();
+      applyProductImageFiles(files);
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [showForm, imagePreview, imageFile, imagePreview2, imageFile2]);
+
   const handleDragOver = (e) => {
     e.preventDefault();
     setIsDragging(true);
@@ -874,9 +1151,25 @@ export default function ProductsPage() {
 
   return (
     <div>
+      {/* Hidden camera input — used on mobile to open the rear camera for barcode capture.
+          State is initialized by triggerMobileCameraScan() before the click; this handler just
+          decodes the captured photo and appends the result to the batch. */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (!file) return;
+          processBatchImages([file]);
+        }}
+      />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold text-gray-800">{t('products')}</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
           {/* Search toggle + slide-in input */}
           <div className="relative flex items-center">
             <button
@@ -915,10 +1208,10 @@ export default function ProductsPage() {
             </div>
           </div>
           {/* Location filter dropdown */}
-          <div className="relative" ref={filterLocationRef}>
+          <div className="relative w-full sm:w-auto" ref={filterLocationRef}>
             <button
               onClick={() => setFilterLocationOpen(!filterLocationOpen)}
-              className={`px-4 py-2 rounded-[1.2rem] font-medium flex items-center gap-1.5 transition-colors ${filterLocation ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+              className={`w-full sm:w-auto px-4 py-2 rounded-[1.2rem] font-medium flex items-center justify-center sm:justify-start gap-1.5 transition-colors border ${filterLocation ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200 hover:border-gray-400'}`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -951,13 +1244,13 @@ export default function ProductsPage() {
           </div>
           <button
             onClick={() => { resetForm(); setShowAddChoice(true); }}
-            className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
+            className="w-full sm:w-auto px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
           >
             {t('addProduct')}
           </button>
           <button
             onClick={() => { setQuotationCategory(''); setQuotationPriceType('retail_price'); setQuotationLocation(''); setShowQuotation(true); }}
-            className="px-4 py-2 bg-green-700 text-white rounded-[1.2rem] hover:bg-green-800 font-medium"
+            className="w-full sm:w-auto px-4 py-2 bg-green-700 text-white rounded-[1.2rem] hover:bg-green-800 font-medium"
           >
             {t('downloadQuotation')}
           </button>
@@ -997,7 +1290,13 @@ export default function ProductsPage() {
                 </div>
               </button>
               <button
-                onClick={openScanner}
+                onClick={() => {
+                  if (isMobile) {
+                    triggerMobileCameraScan();
+                  } else {
+                    openScanner();
+                  }
+                }}
                 className="w-full flex items-center gap-3 px-5 py-4 rounded-[1.2rem] border-2 border-gray-200 hover:border-amber-700 hover:bg-amber-50 transition-all duration-200 group"
               >
                 <span className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 group-hover:bg-amber-700 group-hover:text-white transition-all duration-200">
@@ -1096,18 +1395,62 @@ export default function ProductsPage() {
             {/* Device Scan Mode */}
             {scanMode === 'device' && (
               <div>
-                <div className="mb-4">
-                  <p className="text-gray-500 text-sm mb-2 text-center">
-                    {batchScanned.length > 0 ? 'Keep scanning or type barcode manually' : 'Point your barcode scanner at the product or type manually'}
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      ref={scanInputRef}
-                      type="text"
-                      defaultValue=""
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
+                {isMobile ? (
+                  /* Mobile: open the rear camera to scan a barcode photo */
+                  <div className="mb-4">
+                    <p className="text-gray-500 text-sm mb-3 text-center">
+                      {batchScanned.length > 0 ? 'Tap to scan another barcode' : 'Tap to open the camera and scan a barcode'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={triggerMobileCameraScan}
+                      disabled={batchScanning}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-semibold transition-colors disabled:opacity-60"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
+                      {batchScanning ? 'Scanning…' : 'Start Scanner'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mb-4">
+                    <p className="text-gray-500 text-sm mb-2 text-center">
+                      {batchScanned.length > 0 ? 'Keep scanning or type barcode manually' : 'Point your barcode scanner at the product or type manually'}
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        ref={scanInputRef}
+                        type="text"
+                        defaultValue=""
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const val = scanInputRef.current?.value?.trim().toUpperCase();
+                            if (val && val.length >= 1) {
+                              const matched = lookupBarcode(val);
+                              if (matched) {
+                                setShowScanner(false);
+                                setDuplicateProduct(matched);
+                                setDuplicateQty(1);
+                              } else {
+                                addBarcodeToBatch(val);
+                              }
+                              if (scanInputRef.current) scanInputRef.current.value = '';
+                            }
+                            scanBufferRef.current = '';
+                            lastKeyTimeRef.current = 0;
+                            return;
+                          }
+                        }}
+                        className="flex-1 px-4 py-2.5 border-2 border-gray-200 rounded-[1.2rem] text-center text-sm font-mono tracking-wider focus:outline-none transition-colors uppercase"
+                        placeholder="Waiting for scan..."
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
                           const val = scanInputRef.current?.value?.trim().toUpperCase();
                           if (val && val.length >= 1) {
                             const matched = lookupBarcode(val);
@@ -1120,87 +1463,37 @@ export default function ProductsPage() {
                             }
                             if (scanInputRef.current) scanInputRef.current.value = '';
                           }
-                          scanBufferRef.current = '';
-                          lastKeyTimeRef.current = 0;
-                          return;
-                        }
-                      }}
-                      className="flex-1 px-4 py-2.5 border-2 border-gray-200 rounded-[1.2rem] text-center text-sm font-mono tracking-wider focus:outline-none transition-colors uppercase"
-                      placeholder="Waiting for scan..."
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const val = scanInputRef.current?.value?.trim().toUpperCase();
-                        if (val && val.length >= 1) {
-                          const matched = lookupBarcode(val);
-                          if (matched) {
-                            setShowScanner(false);
-                            setDuplicateProduct(matched);
-                            setDuplicateQty(1);
-                          } else {
-                            addBarcodeToBatch(val);
-                          }
-                          if (scanInputRef.current) scanInputRef.current.value = '';
-                        }
-                      }}
-                      className="px-4 py-2.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium text-sm transition-colors"
-                    >
-                      Add
-                    </button>
+                        }}
+                        className="px-4 py-2.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium text-sm transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {/* Batch results table — same as upload mode */}
+                {batchScanning && (
+                  <div className="text-center py-4 mb-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-700 mx-auto mb-2"></div>
+                    <p className="text-xs text-gray-600">Decoding barcode…</p>
+                  </div>
+                )}
+
+                {/* Batch results — card view */}
                 {batchScanned.length > 0 && (
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-semibold text-gray-700">{batchScanned.length} barcode{batchScanned.length > 1 ? 's' : ''} scanned</p>
                     </div>
-                    <div className="overflow-y-auto max-h-[280px] rounded-xl border border-gray-200">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-50 sticky top-0">
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Product</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Barcode</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Category</th>
-                            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {batchScanned.map((item, idx) => (
-                            <tr key={idx} className="border-t border-gray-100 hover:bg-amber-50/40">
-                              <td className="px-3 py-2">
-                                <div className="flex items-center gap-1.5">
-                                  {item.matched && (
-                                    <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" title="Exists"></span>
-                                  )}
-                                  <span className={`truncate max-w-[100px] ${item.matched ? 'text-blue-700' : 'text-gray-800'}`}>
-                                    {item.name || '-'}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-2 font-mono text-xs text-gray-600">{item.barcode}</td>
-                              <td className="px-3 py-2 text-xs text-gray-500">{item.category || '-'}</td>
-                              <td className="px-3 py-2 text-right whitespace-nowrap">
-                                <button
-                                  onClick={() => handleBatchEdit(idx)}
-                                  className="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleBatchDelete(idx)}
-                                  className="text-red-500 hover:text-red-700 text-xs font-medium"
-                                >
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="overflow-y-auto max-h-[320px] space-y-2 pr-1">
+                      {batchScanned.map((item, idx) => (
+                        <BatchScanCard
+                          key={idx}
+                          item={item}
+                          onEdit={() => handleBatchEdit(idx)}
+                          onDelete={() => handleBatchDelete(idx)}
+                        />
+                      ))}
                     </div>
                     {batchScanned.some(i => i.matched) && (
                       <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
@@ -1262,7 +1555,7 @@ export default function ProductsPage() {
                   </div>
                 )}
 
-                {/* Batch results table */}
+                {/* Batch results — card view */}
                 {batchScanned.length > 0 && !batchScanning && (
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-2">
@@ -1274,49 +1567,15 @@ export default function ProductsPage() {
                         + Scan More
                       </button>
                     </div>
-                    <div className="overflow-y-auto max-h-[280px] rounded-xl border border-gray-200">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-50 sticky top-0">
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Product</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Barcode</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Category</th>
-                            <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {batchScanned.map((item, idx) => (
-                            <tr key={idx} className="border-t border-gray-100 hover:bg-amber-50/40">
-                              <td className="px-3 py-2">
-                                <div className="flex items-center gap-1.5">
-                                  {item.matched && (
-                                    <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" title="Exists"></span>
-                                  )}
-                                  <span className={`truncate max-w-[100px] ${item.matched ? 'text-blue-700' : 'text-gray-800'}`}>
-                                    {item.name || '-'}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-2 font-mono text-xs text-gray-600">{item.barcode}</td>
-                              <td className="px-3 py-2 text-xs text-gray-500">{item.category || '-'}</td>
-                              <td className="px-3 py-2 text-right whitespace-nowrap">
-                                <button
-                                  onClick={() => handleBatchEdit(idx)}
-                                  className="text-blue-600 hover:text-blue-800 text-xs font-medium mr-2"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleBatchDelete(idx)}
-                                  className="text-red-500 hover:text-red-700 text-xs font-medium"
-                                >
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="overflow-y-auto max-h-[320px] space-y-2 pr-1">
+                      {batchScanned.map((item, idx) => (
+                        <BatchScanCard
+                          key={idx}
+                          item={item}
+                          onEdit={() => handleBatchEdit(idx)}
+                          onDelete={() => handleBatchDelete(idx)}
+                        />
+                      ))}
                     </div>
                     {batchScanned.some(i => i.matched) && (
                       <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
@@ -1361,8 +1620,25 @@ export default function ProductsPage() {
 
       {/* Product Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onDragOver={handleFormDragOver}
+          onDragLeave={handleFormDragLeave}
+          onDrop={handleFormDrop}
+        >
+          <div className={`relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto transition-shadow ${isFormDragging ? 'ring-4 ring-amber-400 ring-offset-2' : ''}`}>
+            {isFormDragging && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-amber-50/90 border-2 border-dashed border-amber-400">
+                <div className="flex flex-col items-center text-amber-700">
+                  <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 15V3" />
+                    <path d="M7 7l5-5 5 5" />
+                    <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                  </svg>
+                  <p className="font-semibold">Drop image to upload</p>
+                </div>
+              </div>
+            )}
             <h2 className="text-xl font-bold mb-4">
               {editingProduct ? t('edit') : t('addNewProduct')}
             </h2>
@@ -1401,29 +1677,19 @@ export default function ProductsPage() {
                     ref={productImageRef}
                     className="hidden"
                     onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      if (files.length === 0) return;
-                      // If no image yet, fill slot 1 first, then slot 2
-                      if (!imagePreview && !imageFile) {
-                        setImagePreview(URL.createObjectURL(files[0]));
-                        setImageFile(files[0]);
-                        if (files[1]) {
-                          setImagePreview2(URL.createObjectURL(files[1]));
-                          setImageFile2(files[1]);
-                        }
-                      } else if (!imagePreview2 && !imageFile2) {
-                        // Slot 1 filled, fill slot 2
-                        setImagePreview2(URL.createObjectURL(files[0]));
-                        setImageFile2(files[0]);
-                      } else {
-                        // Both filled — replace both
-                        setImagePreview(URL.createObjectURL(files[0]));
-                        setImageFile(files[0]);
-                        if (files[1]) {
-                          setImagePreview2(URL.createObjectURL(files[1]));
-                          setImageFile2(files[1]);
-                        }
-                      }
+                      applyProductImageFiles(e.target.files);
+                      e.target.value = '';
+                    }}
+                  />
+                  {/* Mobile-only camera input — opens the rear camera at full resolution */}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    ref={productImageCameraRef}
+                    className="hidden"
+                    onChange={(e) => {
+                      applyProductImageFiles(e.target.files);
                       e.target.value = '';
                     }}
                   />
@@ -1431,7 +1697,10 @@ export default function ProductsPage() {
                     /* No images — single upload button */
                     <button
                       type="button"
-                      onClick={() => productImageRef.current?.click()}
+                      onClick={() => {
+                        if (isMobile) setShowImagePickerChoice(true);
+                        else productImageRef.current?.click();
+                      }}
                       className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors"
                     >
                       <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
@@ -1446,7 +1715,10 @@ export default function ProductsPage() {
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={() => productImageRef.current?.click()}
+                          onClick={() => {
+                            if (isMobile) setShowImagePickerChoice(true);
+                            else productImageRef.current?.click();
+                          }}
                           className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-colors overflow-hidden"
                         >
                           {imagePreview ? (
@@ -1493,7 +1765,10 @@ export default function ProductsPage() {
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={() => productImageRef2.current?.click()}
+                          onClick={() => {
+                            if (isMobile) setShowImagePickerChoice(true);
+                            else productImageRef2.current?.click();
+                          }}
                           className={`${imagePreview2 ? 'w-20' : 'w-10'} h-20 border-2 border-dashed border-gray-300 rounded-[1.2rem] flex items-center justify-center hover:border-amber-500 hover:bg-amber-50 transition-all overflow-hidden`}
                         >
                           {imagePreview2 ? (
@@ -1736,6 +2011,70 @@ export default function ProductsPage() {
         </div>
       )}
 
+      {/* Mobile image source choice — Gallery vs Camera */}
+      {showImagePickerChoice && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setShowImagePickerChoice(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl p-5 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-center text-gray-800 mb-1">{t('addImage') || 'Add image'}</h3>
+            <p className="text-xs text-gray-500 text-center mb-4">{t('originalQualityNote') || 'Uploads keep the original resolution and quality'}</p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImagePickerChoice(false);
+                  productImageCameraRef.current?.click();
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-[1.2rem] border-2 border-gray-200 hover:border-amber-600 hover:bg-amber-50 transition-colors"
+              >
+                <span className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 flex-shrink-0">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                </span>
+                <div className="text-left flex-1 min-w-0">
+                  <span className="block font-semibold text-gray-800">{t('takeAPicture') || 'Take a Picture'}</span>
+                  <span className="block text-xs text-gray-500">{t('useCameraFullRes') || 'Use the camera at full resolution'}</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImagePickerChoice(false);
+                  productImageRef.current?.click();
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-[1.2rem] border-2 border-gray-200 hover:border-amber-600 hover:bg-amber-50 transition-colors"
+              >
+                <span className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 flex-shrink-0">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="9" r="1.5" />
+                    <path d="M21 15l-5-5L5 21" />
+                  </svg>
+                </span>
+                <div className="text-left flex-1 min-w-0">
+                  <span className="block font-semibold text-gray-800">{t('chooseFromGallery') || 'Choose from Gallery'}</span>
+                  <span className="block text-xs text-gray-500">{t('pickOriginalPhoto') || 'Pick a photo — original file is uploaded'}</span>
+                </div>
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowImagePickerChoice(false)}
+              className="mt-4 w-full text-sm text-gray-500 hover:text-gray-700 py-2"
+            >
+              {t('cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Category filter tabs */}
       <div className="flex flex-wrap gap-2 mb-4">
         {allCats.map(cat => {
@@ -1778,7 +2117,26 @@ export default function ProductsPage() {
                   <h2 className="text-lg font-bold text-gray-800 mb-3">
                     {td(cat)} <span className="text-sm font-bold text-gray-400 ml-2">&nbsp;| &nbsp; {catProducts.length} QTY</span>
                   </h2>
-                  <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+
+                  {/* Mobile card view */}
+                  <div className="sm:hidden space-y-2">
+                    {visibleProducts.map((p) => (
+                      <MobileProductCard
+                        key={p.id}
+                        p={p}
+                        showWeight={cat !== 'Thanka' && cat !== 'Thanka Locket' && cat !== 'Jewelleries'}
+                        showDescription={cat === 'Thanka' || cat === 'Thanka Locket'}
+                        t={t}
+                        onEdit={handleEdit}
+                        onDelete={setDeleteProduct}
+                        onPreview={setPreviewImages}
+                        onDescription={handleDescriptionPopup}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Desktop table view */}
+                  <div className="hidden sm:block overflow-x-auto rounded-2xl border border-gray-200 bg-white">
                     <table className="min-w-full border-separate border-spacing-0">
                       <thead>
                         <tr className="bg-gray-50/80">
@@ -1839,8 +2197,37 @@ export default function ProductsPage() {
                             <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.wholesale_price || 0).toFixed(2)}</td>
                             <td className="px-5 py-4 border-b border-gray-100 text-sm text-gray-600">{parseFloat(p.retail_price || 0).toFixed(2)}</td>
                             <td className="px-5 py-4 border-b border-gray-100 text-sm">
-                              <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 mr-3">Edit</button>
-                              <button onClick={() => setDeleteProduct(p)} className="text-red-600 hover:text-red-800">Delete</button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEdit(p)}
+                                  aria-label={t('edit') || 'Edit'}
+                                  title={t('edit') || 'Edit'}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[0.9rem] bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-medium transition-colors"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                  </svg>
+                                  <span className="hidden sm:inline">{t('edit') || 'Edit'}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteProduct(p)}
+                                  aria-label={t('delete') || 'Delete'}
+                                  title={t('delete') || 'Delete'}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[0.9rem] bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 text-xs font-medium transition-colors"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="3 6 5 6 21 6" />
+                                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                    <path d="M10 11v6" />
+                                    <path d="M14 11v6" />
+                                    <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                                  </svg>
+                                  <span className="hidden sm:inline">{t('delete') || 'Delete'}</span>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -2134,6 +2521,35 @@ export default function ProductsPage() {
           onClick={() => setPreviewImages(null)}
         >
           <div className="relative max-w-lg max-h-[80vh] flex items-center" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={async () => {
+                const url = previewImages.images[previewImages.index];
+                if (!url) return;
+                try {
+                  const res = await fetch(url);
+                  const blob = await res.blob();
+                  const blobUrl = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = blobUrl;
+                  a.download = (url.split('/').pop() || 'image').split('?')[0];
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(blobUrl);
+                } catch {
+                  window.open(url, '_blank');
+                }
+              }}
+              aria-label="Download original"
+              title="Download original"
+              className="absolute -top-3 -left-3 z-10 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-amber-700"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
             <button
               onClick={() => setPreviewImages(null)}
               className="absolute -top-3 -right-3 z-10 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900"

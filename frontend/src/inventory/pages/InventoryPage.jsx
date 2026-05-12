@@ -157,13 +157,13 @@ export default function InventoryPage() {
           </div>
         </div>
         <h1 className="text-2xl font-bold text-gray-800 text-center">{t('inventory')}</h1>
-        <div className="flex-1 flex items-center justify-end gap-3">
+        <div className="flex-1 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto">
           {/* Custom Location Dropdown */}
-          <div className="relative" ref={locDropdownRef}>
+          <div className="relative w-full sm:w-auto" ref={locDropdownRef}>
             <button
               type="button"
               onClick={() => setLocDropdownOpen(!locDropdownOpen)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-[1.2rem] bg-white hover:bg-gray-50 focus:outline-none min-w-[180px] text-left"
+              className="w-full sm:w-auto flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-[1.2rem] bg-white hover:bg-gray-50 focus:outline-none sm:min-w-[180px] text-left"
             >
               <span className="flex-1 truncate text-sm text-gray-800">
                 {selectedLocation
@@ -209,7 +209,7 @@ export default function InventoryPage() {
           </div>
           <button
             onClick={openStockIn}
-            className="px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
+            className="w-full sm:w-auto px-4 py-2 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-medium"
           >
             {t('stockIn')}
           </button>
@@ -309,14 +309,105 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* Inventory Table */}
+      {/* Inventory list */}
       {loading ? (
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-700"></div>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
-          <table className="min-w-full border-separate border-spacing-0">
+        <>
+          {/* Mobile card view */}
+          <div className="sm:hidden space-y-2">
+            {(() => {
+              const visibleInv = inventory.filter(inv => {
+                const pCat = inv.product?.category;
+                const knownCats = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
+                if (filterCategory) {
+                  if (filterCategory === 'Others') {
+                    if (pCat && pCat !== 'Others' && knownCats.includes(pCat)) return false;
+                  } else {
+                    if (pCat !== filterCategory) return false;
+                  }
+                }
+                if (debouncedSearch) {
+                  const q = debouncedSearch.toLowerCase();
+                  const matchName = inv.product?.name?.toLowerCase().includes(q);
+                  const matchBarcode = inv.product?.barcode?.toLowerCase().includes(q);
+                  const matchLocation = inv.location?.name?.toLowerCase().includes(q);
+                  if (!matchName && !matchBarcode && !matchLocation) return false;
+                }
+                return true;
+              });
+              if (visibleInv.length === 0) {
+                return (
+                  <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center text-gray-400">
+                    {t('noInventoryRecords')}
+                  </div>
+                );
+              }
+              return visibleInv.map((inv) => {
+                const imgs = [getImageUrl(inv.product?.image_url), getImageUrl(inv.product?.image_url_2)].filter(Boolean);
+                const statusClass = inv.quantity === 0 ? 'bg-red-50 text-red-700' :
+                                    inv.quantity <= 5 ? 'bg-yellow-50 text-yellow-700' :
+                                    'bg-green-50 text-green-700';
+                const statusLabel = inv.quantity === 0 ? t('outOfStockLabel') : inv.quantity <= 5 ? t('lowStockLabel') : t('inStock');
+                return (
+                  <div key={inv.id} className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      {imgs.length > 0 ? (
+                        <div className="relative w-16 h-16 flex-shrink-0">
+                          <img
+                            src={imgs[0]}
+                            alt={inv.product?.name}
+                            loading="lazy"
+                            className="w-16 h-16 rounded-xl object-cover"
+                            onClick={() => setPreviewImages({ images: imgs, index: 0 })}
+                          />
+                          {imgs.length > 1 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400 text-xs flex-shrink-0">N/A</div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-gray-800 truncate">{inv.product?.name || '-'}</span>
+                          <button
+                            type="button"
+                            onClick={() => { setEditingInv(inv); setEditQty(inv.quantity); }}
+                            aria-label={t('manage')}
+                            title={t('manage')}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[0.9rem] bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-medium transition-colors flex-shrink-0"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                            <span>{t('manage')}</span>
+                          </button>
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500 font-mono truncate">{inv.product?.barcode || '-'}</div>
+                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                          <div className="truncate"><span className="text-gray-500">{t('location')}:</span> <span className="text-gray-700">{inv.location?.name || '-'}</span></div>
+                          <div className="truncate"><span className="text-gray-500">{t('quantity')}:</span> <span className="text-gray-800 font-semibold">{inv.quantity}</span></div>
+                        </div>
+                        <div className="mt-2">
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${statusClass}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          {/* Desktop table view */}
+          <div className="hidden sm:block overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+            <table className="min-w-full border-separate border-spacing-0">
             <thead>
               <tr className="bg-gray-50/80">
                 <th className="px-5 py-4 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-200">{t('image')}</th>
@@ -402,6 +493,7 @@ export default function InventoryPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
       {/* Manage Quantity Popup */}
       {editingInv && (

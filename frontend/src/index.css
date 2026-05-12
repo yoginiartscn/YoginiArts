@@ -176,6 +176,31 @@ button:focus {
   outline: none !important;
 }
 
+/* Pointer cursor on hover-capable (desktop) devices.
+   Tailwind v4 preflight defaults buttons to cursor: default; restore the hand
+   cursor for true mouse-driven setups while leaving touch devices untouched. */
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  a[href],
+  summary,
+  label[for],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="button"]:not(:disabled),
+  input[type="reset"]:not(:disabled),
+  input[type="file"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
 /* Custom component classes */
 @layer components {
   .btn-primary {

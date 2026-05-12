@@ -9,23 +9,33 @@ const { uploadImage, deleteImage } = require('../../config/supabase');
 
 const router = express.Router();
 
-// Multer config — memory storage so we can forward the buffer to Supabase
+// Multer config — memory storage so we can forward the buffer to Supabase untouched.
+// 10 MB per image; supports JPEG/PNG/GIF/WebP plus iPhone HEIC/HEIF and AVIF.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per image
   fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowed.test(file.mimetype);
-    if (ext && mime) return cb(null, true);
+    const allowedExt = /\.(jpe?g|png|gif|webp|heic|heif|avif)$/i;
+    const extOk = allowedExt.test(path.extname(file.originalname || ''));
+    const mimeOk = typeof file.mimetype === 'string' && file.mimetype.startsWith('image/');
+    if (extOk || mimeOk) return cb(null, true);
     cb(new Error('Only image files are allowed'));
   },
 });
 
-// Wrapper: run multer only for multipart requests, skip for JSON
+// Wrapper: run multer only for multipart requests, skip for JSON.
+// Translates multer errors (size, mime) into a clear JSON response instead of a 500.
 const optionalUpload = (fields) => (req, res, next) => {
   if (req.is('multipart/form-data')) {
-    return upload.fields(fields)(req, res, next);
+    return upload.fields(fields)(req, res, (err) => {
+      if (err) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({ success: false, message: 'Image too large — maximum 10 MB per image.' });
+        }
+        return res.status(400).json({ success: false, message: err.message || 'Upload failed' });
+      }
+      next();
+    });
   }
   next();
 };

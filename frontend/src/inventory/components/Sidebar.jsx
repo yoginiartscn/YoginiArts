@@ -24,13 +24,25 @@ export default function Sidebar({ isOpen, onClose }) {
       )}
 
       <aside
-        className={`fixed top-0 left-0 z-50 h-full w-64 bg-gray-900 text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${
+        className={`fixed top-0 left-0 z-50 h-full w-full lg:w-64 bg-gray-900 text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="p-6 border-b border-gray-700">
-          <h1 className="text-xl font-bold text-amber-400">Yogini Arts</h1>
-          <p className="text-sm text-gray-400 mt-1">{t('inventoryManagement')}</p>
+        <div className="p-6 border-b border-gray-700 flex items-start justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-amber-400">Yogini Arts</h1>
+            <p className="text-sm text-gray-400 mt-1">{t('inventoryManagement')}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close menu"
+            className="lg:hidden -mr-1 -mt-1 p-2 rounded-[1.2rem] text-gray-300 hover:bg-gray-800 hover:text-white"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         <nav className="mt-4 px-3">
