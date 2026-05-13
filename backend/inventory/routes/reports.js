@@ -33,6 +33,29 @@ const thinBorder = {
   right: { style: 'thin' },
 };
 
+// ─── mapWithConcurrency — run an async mapper over an array with a worker pool ──
+// Used by the quotation export to download many product images in parallel without
+// firing hundreds of simultaneous requests at Supabase. Order of results matches
+// the input array.
+async function mapWithConcurrency(items, mapper, concurrency = 12) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= items.length) return;
+      try {
+        results[idx] = await mapper(items[idx], idx);
+      } catch (err) {
+        results[idx] = null;
+      }
+    }
+  };
+  const n = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return results;
+}
+
 // ─── embedImages helper — place 1 or 2 images in a cell ──────────────────────
 // options.singleImage: if true, only show first image (for quotation exports)
 // options.maxSize: max pixel dimension (default IMG_FIT)
@@ -304,11 +327,62 @@ router.get('/export/quotation', authenticate, async (req, res) => {
       'Jewelleries': 'jewelleries',
     };
 
-    const headers = ['Image / 图片', 'Product Name / 产品名称', 'Bar Code / 条形码', 'Weight / 重量', 'Size / 尺寸', `${priceLabels[price_type] || 'Price / 价格'}`];
-    const colWidths = [IMG_COL_WIDTH, 36, 37, 24, 24, 20];
+    // Per-category sheet layout. Thanka is portrait orientation so its sheet uses a
+    // narrower image column and a taller image cap, and drops the Weight column since
+    // Thanka aren't sold by weight.
+    const getCatConfig = (cat) => {
+      const isThanka = cat === 'Thanka';
+      const priceLabel = priceLabels[price_type] || 'Price / 价格';
+      if (isThanka) {
+        return {
+          isThanka: true,
+          imgColWidth: 20,
+          maxImgPx: 180,
+          headers: ['Image / 图片', 'Product Name / 产品名称', 'Bar Code / 条形码', 'Size / 尺寸', priceLabel],
+          colWidths: [20, 36, 37, 24, 20],
+        };
+      }
+      return {
+        isThanka: false,
+        imgColWidth: IMG_COL_WIDTH,
+        maxImgPx: QUOTATION_IMG_MAX,
+        headers: ['Image / 图片', 'Product Name / 产品名称', 'Bar Code / 条形码', 'Weight / 重量', 'Size / 尺寸', priceLabel],
+        colWidths: [IMG_COL_WIDTH, 36, 37, 24, 24, 20],
+      };
+    };
 
     const allCategories = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
     const categoriesToExport = category ? [category] : allCategories;
+
+    // Build the filename and flush the download headers BEFORE any slow work.
+    // This makes the browser show the file in its downloads bar the instant the
+    // request arrives, rather than waiting until the workbook is finished. The
+    // body streams in afterward. Filename depends only on query params, which we
+    // already have, so it's safe to commit headers this early.
+    const catFileMap = {
+      'Singing Bowl': 'SingingBowl',
+      'Thanka': 'Thanka',
+      'Thanka Locket': 'ThankaLocket',
+      'Jewelleries': 'Jewelleries',
+    };
+    const priceFileMap = { cost_price: 'CostPrice', retail_price: 'RetailPrice', wholesale_price: 'WholesalePrice' };
+    const catPart = catFileMap[category] || (category ? category.replace(/\s+/g, '') : 'AllProducts');
+    const pricePart = priceFileMap[price_type] || 'Price';
+    let locPart = '';
+    if (location_id) {
+      const loc = await Location.findByPk(location_id);
+      if (loc?.name) locPart = '_' + loc.name.replace(/\s+/g, '');
+    }
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const datePart = `${dd}-${mm}-${now.getFullYear()}`;
+    const fileName = `Yogini_${catPart}${locPart}_${pricePart}_${datePart}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
     // Load template to copy logo and styling from it
     const templatePath = path.join(TEMPLATES_DIR, 'SingingBowlTemplates.xlsx');
@@ -347,8 +421,8 @@ router.get('/export/quotation', authenticate, async (req, res) => {
       locationProductIds = new Set(invRecords.map(r => r.product_id));
     }
 
-    // Helper to set up a sheet with logo and headers
-    const setupSheet = (sheet) => {
+    // Helper to set up a sheet with logo and headers (uses per-category config)
+    const setupSheet = (sheet, config) => {
       if (logoImgBuffer) {
         const logoId = workbook.addImage({ buffer: logoImgBuffer, extension: logoImgExt });
         sheet.addImage(logoId, {
@@ -356,11 +430,11 @@ router.get('/export/quotation', authenticate, async (req, res) => {
           br: { col: 2, row: 1, nativeCol: 2, nativeRow: 1, nativeColOff: 2496589, nativeRowOff: 424544 },
         });
       }
-      sheet.mergeCells(1, 1, 2, headers.length);
+      sheet.mergeCells(1, 1, 2, config.headers.length);
       sheet.getRow(1).height = 44.6;
       sheet.getRow(2).height = 44.6;
       const headerRow = sheet.getRow(3);
-      headers.forEach((h, i) => {
+      config.headers.forEach((h, i) => {
         const cell = headerRow.getCell(i + 1);
         cell.value = h;
         cell.font = tplHeaderFont;
@@ -368,26 +442,95 @@ router.get('/export/quotation', authenticate, async (req, res) => {
         cell.alignment = tplHeaderAlign;
       });
       headerRow.height = 30;
-      colWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+      config.colWidths.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
     };
 
-    // Helper to write product rows into a sheet starting at startRow
-    const writeProducts = async (sheet, products, startRow) => {
+    // Helper to write product rows into a sheet starting at startRow.
+    //
+    // Two-phase approach to avoid the slow sequential-download bottleneck:
+    //   1. Download every product image in parallel (concurrency-capped via
+    //      mapWithConcurrency) and stash the raw buffer + dimensions in memory.
+    //   2. Write rows sequentially using those pre-fetched buffers. Excel writes
+    //      are CPU-bound and fast; what used to take minutes (N × network RTT)
+    //      now takes seconds (~N/12 × network RTT).
+    //
+    // Images are passed through unmodified — original quality preserved.
+    const writeProducts = async (sheet, products, startRow, config) => {
+      const PX_TO_EMU = 9525;
+      const cellWidthPx = config.imgColWidth * 7.5;
+      const maxImgPx = config.maxImgPx;
+
+      // Phase 1 — parallel fetch
+      const imageData = await mapWithConcurrency(products, async (p) => {
+        if (!p.image_url) return null;
+        try {
+          const buffer = await downloadImage(p.image_url);
+          if (!buffer) return null;
+          const ext = path.extname(p.image_url.split('?')[0]).replace('.', '').toLowerCase() || 'jpeg';
+          return {
+            buffer,
+            extension: ext === 'jpg' ? 'jpeg' : ext,
+            dimensions: imageSize(buffer),
+          };
+        } catch {
+          return null;
+        }
+      }, 12);
+
+      // Phase 2 — write rows. Column layout differs per category — Thanka has no
+      // Weight column, so columns are: 1=image, 2=name, 3=barcode, 4=size, 5=price.
+      // Other categories: 1=image, 2=name, 3=barcode, 4=weight, 5=size, 6=price.
       for (let idx = 0; idx < products.length; idx++) {
         const p = products[idx];
         const row = sheet.getRow(startRow + idx);
 
         setCell(row, 1, '');
-        const { hasImage, imgHeight } = await embedImages(workbook, sheet, p.image_url, p.image_url_2, 0, startRow + idx - 1, { singleImage: true, maxSize: QUOTATION_IMG_MAX });
-        row.height = hasImage ? imgHeight : 25;
 
-        setCell(row, 2, p.name || '-', { ...dataFont, bold: true });
-        setCell(row, 3, p.barcode || '-');
-        setCell(row, 4, p.weight || '-');
-        setCell(row, 5, p.size || '-');
+        const data = imageData[idx];
+        let hasImage = false;
+        let h = 0;
+        if (data) {
+          const { dimensions } = data;
+          const isVertical = dimensions.height >= dimensions.width;
+          let w;
+          if (isVertical) {
+            // Cap by image-cell width too so portrait images can't overflow when the
+            // column is narrow (Thanka uses a narrower column).
+            const maxImgW = cellWidthPx - 8; // 4px breathing room each side
+            const scaleH = maxImgPx / dimensions.height;
+            const scaleW = maxImgW / dimensions.width;
+            const scale = Math.min(scaleH, scaleW, 1);
+            w = Math.round(dimensions.width * scale);
+            h = Math.round(dimensions.height * scale);
+          } else {
+            const scale = Math.min(maxImgPx / dimensions.width, 1);
+            w = Math.round(dimensions.width * scale);
+            h = Math.round(dimensions.height * scale);
+          }
+          const imgId = workbook.addImage({ buffer: data.buffer, extension: data.extension });
+          const padXEmu = Math.round(Math.max(0, (cellWidthPx - w) / 2) * PX_TO_EMU);
+          const imgWEmu = Math.round(w * PX_TO_EMU);
+          const imgHEmu = Math.round(h * PX_TO_EMU);
+          const padYEmu = Math.round(2 * PX_TO_EMU);
+          const rowIndex = startRow + idx - 1;
+          sheet.addImage(imgId, {
+            tl: { col: 0, row: rowIndex, nativeCol: 0, nativeRow: rowIndex, nativeColOff: padXEmu, nativeRowOff: padYEmu },
+            br: { col: 0, row: rowIndex, nativeCol: 0, nativeRow: rowIndex, nativeColOff: padXEmu + imgWEmu, nativeRowOff: padYEmu + imgHEmu },
+          });
+          hasImage = true;
+        }
+        row.height = hasImage ? Math.round((h + 4) * 0.75) : 25;
+
+        let col = 2;
+        setCell(row, col++, p.name || '-', { ...dataFont, bold: true });
+        setCell(row, col++, p.barcode || '-');
+        if (!config.isThanka) {
+          setCell(row, col++, p.weight || '-');
+        }
+        setCell(row, col++, p.size || '-');
 
         const priceVal = parseFloat(p[price_type] || 0);
-        setCell(row, 6, priceVal > 0 ? priceVal.toFixed(2) : '-', { ...dataFont, bold: true, color: { argb: 'FF720E20' } });
+        setCell(row, col++, priceVal > 0 ? priceVal.toFixed(2) : '-', { ...dataFont, bold: true, color: { argb: 'FF720E20' } });
       }
     };
 
@@ -397,9 +540,10 @@ router.get('/export/quotation', authenticate, async (req, res) => {
       if (locationProductIds) {
         products = products.filter(p => locationProductIds.has(p.id));
       }
+      const config = getCatConfig(category);
       const sheet = workbook.addWorksheet(category);
-      setupSheet(sheet);
-      await writeProducts(sheet, products, 4);
+      setupSheet(sheet, config);
+      await writeProducts(sheet, products, 4, config);
     } else {
       // All Categories — each category gets its own sheet
       for (const cat of categoriesToExport) {
@@ -409,21 +553,20 @@ router.get('/export/quotation', authenticate, async (req, res) => {
         }
         if (products.length === 0) continue;
 
+        const config = getCatConfig(cat);
         const sheet = workbook.addWorksheet(cat);
-        setupSheet(sheet);
-        await writeProducts(sheet, products, 4);
+        setupSheet(sheet, config);
+        await writeProducts(sheet, products, 4, config);
       }
     }
 
     // Ensure at least one sheet exists (Excel requires it)
     if (workbook.worksheets.length === 0) {
       const sheet = workbook.addWorksheet('No Products');
-      setupSheet(sheet);
+      setupSheet(sheet, getCatConfig('Singing Bowl'));
     }
 
-    const catName = catNameMap[category] || (category || 'all_products').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${catName}_PI.xlsx`);
+    // Headers were already sent at the top of the handler; just stream the body.
     await workbook.xlsx.write(res);
     res.end();
   } catch (error) {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Quagga from '@ericblade/quagga2';
 import { useApi } from '../hooks/useApi';
-import { productsApi, reportsApi, locationsApi, getImageUrl } from '../utils/inventoryApi';
+import { productsApi, reportsApi, locationsApi, getImageUrl, getResizedImageUrl } from '../utils/inventoryApi';
 import { useLanguage } from '../context/LanguageContext';
 
 const MobileProductCard = React.memo(function MobileProductCard({ p, showWeight, showDescription, t, onEdit, onDelete, onPreview, onDescription }) {
@@ -19,7 +19,7 @@ const MobileProductCard = React.memo(function MobileProductCard({ p, showWeight,
               alt={p.name}
               loading="lazy"
               className="w-16 h-16 rounded-xl object-cover"
-              onClick={() => onPreview({ images: imgs, index: 0 })}
+              onClick={() => onPreview(p)}
             />
             {imgs.length > 1 && (
               <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
@@ -193,6 +193,7 @@ export default function ProductsPage() {
   const [imagePreview2, setImagePreview2] = useState(null);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [previewImages, setPreviewImages] = useState(null); // { images: [url, ...], index: 0 }
+  const [previewImgLoading, setPreviewImgLoading] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState(null);
 
   const [showSearch, setShowSearch] = useState(false);
@@ -242,6 +243,9 @@ export default function ProductsPage() {
   const lastKeyTimeRef = useRef(0);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  const priceImportRef = useRef(null);
+  const [priceImporting, setPriceImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null); // { ok: bool, updated, skippedEmpty, unmatched, message }
 
   const isMobileDevice = () => {
     if (typeof navigator === 'undefined') return false;
@@ -432,6 +436,28 @@ export default function ProductsPage() {
     }
   };
 
+  const handleImportPrices = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setPriceImporting(true);
+    try {
+      const res = await productsApi.importPrices(api, file);
+      const { updated = 0, skippedEmpty = 0, unmatched = [], message } = res?.data || {};
+      setImportResult({ ok: true, updated, skippedEmpty, unmatched, message });
+      fetchProducts();
+    } catch (err) {
+      const serverMsg = err?.response?.data?.message;
+      const message = serverMsg
+        || (err?.code === 'ERR_NETWORK' || err?.message?.includes('Network')
+            ? 'Could not reach the backend. Make sure your server is running.'
+            : err?.message || 'Failed to import cost prices');
+      setImportResult({ ok: false, message });
+    } finally {
+      setPriceImporting(false);
+    }
+  };
+
   const productsRef = useRef(products);
   productsRef.current = products;
 
@@ -566,6 +592,11 @@ export default function ProductsPage() {
     const handleGlobalKeyDown = (e) => {
       // Skip if any modal/dialog is open
       if (showForm || showScanner || showAddChoice || duplicateProduct) return;
+
+      // Never intercept keys while the user is typing in the page's search box —
+      // it must behave like a plain text input. Enter does nothing here; fast typing
+      // stays in the field instead of being treated as a scanned barcode.
+      if (e.target === searchInputRef.current) return;
 
       const tag = e.target.tagName;
       const isInInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
@@ -1170,27 +1201,39 @@ export default function ProductsPage() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [quotationCatOpen, quotationPriceOpen, quotationLocOpen]);
 
-  const handleDownloadQuotation = async () => {
-    try {
-      const res = await reportsApi.exportQuotation(api, quotationCategory, quotationPriceType, quotationLocation);
-      const catName = (quotationCategory || 'All_Products').replace(/\s+/g, '_');
-      const locName = quotationLocation ? (locations.find(l => l.id === quotationLocation)?.name?.replace(/\s+/g, '_') || 'Location') : '';
-      const priceLabels = { cost_price: 'Cost_Price', retail_price: 'Retail_Price', wholesale_price: 'Wholesale_Price' };
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const fileName = `${catName}${locName ? '_' + locName : ''}_${priceLabels[quotationPriceType] || 'Price'}_${dateStr}_quotation.xlsx`;
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      setShowQuotation(false);
-    } catch (err) {
-      console.error('Quotation download error:', err);
-      alert('Failed to download quotation');
+  const handleDownloadQuotation = () => {
+    // Native browser download: build the URL with auth token in the query string and
+    // programmatically click a link. The browser then handles the request itself, so
+    // the download appears in the browser's downloads bar with its own progress UI
+    // — instant visual feedback, no waiting on our app to buffer the blob.
+    const token = localStorage.getItem('inv_token');
+    if (!token) {
+      alert('You are not signed in. Please log in again.');
+      return;
     }
+    // VITE_API_URL is e.g. http://localhost:5300/api ; the inventory router is mounted
+    // at /api/inventory on the backend (server.js), so the full path needs /inventory.
+    const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:5300/api');
+    const params = new URLSearchParams({ token });
+    if (quotationCategory) params.set('category', quotationCategory);
+    if (quotationPriceType) params.set('price_type', quotationPriceType);
+    if (quotationLocation) params.set('location_id', quotationLocation);
+    const url = `${API_BASE}/inventory/reports/export/quotation?${params.toString()}`;
+
+    // Fire the request through a hidden iframe rather than a same-tab navigation.
+    // In dev the frontend (5173) and backend (5300) are different origins, so the
+    // <a download> attribute is ignored by Chrome and the page would navigate to the
+    // URL (showing it in the address bar). An iframe stays invisible — the browser
+    // just sees Content-Disposition: attachment and routes it to the downloads bar.
+    let iframe = document.getElementById('inv-download-iframe');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'inv-download-iframe';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+    }
+    iframe.src = url;
+    setShowQuotation(false);
   };
 
   const handleManualBarcodeSubmit = () => {
@@ -1220,6 +1263,66 @@ export default function ProductsPage() {
     }
     return counts;
   }, [productsByCategory]);
+
+  // Flat list of products in display order, matching whatever the user currently sees on
+  // screen. Used by the image preview modal to step through products with prev/next.
+  const flatVisibleProducts = useMemo(() => {
+    const list = [];
+    for (const cat of allCats) {
+      if (filterCategory && filterCategory !== cat) continue;
+      const catProducts = productsByCategory[cat] || [];
+      const limit = visibleRows[cat] || ROWS_PER_PAGE;
+      list.push(...catProducts.slice(0, limit));
+    }
+    return list;
+  }, [productsByCategory, filterCategory, visibleRows]);
+
+  const openProductPreview = useCallback((product) => {
+    const idx = flatVisibleProducts.findIndex((p) => p.id === product.id);
+    if (idx === -1) return;
+    setPreviewImages({ index: idx });
+  }, [flatVisibleProducts]);
+
+  const previewProduct = previewImages && flatVisibleProducts[previewImages.index] || null;
+  const previewProductImageUrl = previewProduct ? getImageUrl(previewProduct.image_url) : null;
+
+  // When the preview opens or its index changes, reset the loading flag and preload
+  // the next/previous product's image in the background — so clicking the arrows feels
+  // instant. Products with no image are skipped.
+  useEffect(() => {
+    if (!previewImages) return;
+    setPreviewImgLoading(true);
+    const total = flatVisibleProducts.length;
+    if (total > 1) {
+      const next = flatVisibleProducts[(previewImages.index + 1) % total];
+      const prev = flatVisibleProducts[(previewImages.index - 1 + total) % total];
+      [next, prev].forEach((p) => {
+        const u = p && getImageUrl(p.image_url);
+        if (!u) return;
+        const im = new Image();
+        im.src = getResizedImageUrl(u, { width: 1600, quality: 80 });
+      });
+    }
+  }, [previewImages?.index, flatVisibleProducts]);
+
+  // Keyboard navigation while the preview is open: ←/→ to step, Esc to close.
+  useEffect(() => {
+    if (!previewImages) return;
+    const onKey = (e) => {
+      const total = flatVisibleProducts.length;
+      if (e.key === 'Escape') {
+        setPreviewImages(null);
+      } else if (e.key === 'ArrowRight' && total > 1) {
+        e.preventDefault();
+        setPreviewImages({ index: (previewImages.index + 1) % total });
+      } else if (e.key === 'ArrowLeft' && total > 1) {
+        e.preventDefault();
+        setPreviewImages({ index: (previewImages.index - 1 + total) % total });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewImages, flatVisibleProducts.length]);
 
   return (
     <div>
@@ -1275,6 +1378,7 @@ export default function ProductsPage() {
                 placeholder={t('searchByNameBarcode')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-[1.2rem] focus:outline-none text-sm"
               />
             </div>
@@ -1326,8 +1430,103 @@ export default function ProductsPage() {
           >
             {t('downloadQuotation')}
           </button>
+          <input
+            ref={priceImportRef}
+            type="file"
+            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            className="hidden"
+            onChange={handleImportPrices}
+          />
+          <button
+            type="button"
+            onClick={() => priceImportRef.current?.click()}
+            disabled={priceImporting}
+            className="w-full sm:w-auto px-4 py-2 bg-blue-700 text-white rounded-[1.2rem] hover:bg-blue-800 font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {priceImporting ? 'Importing…' : 'Import Costs (Excel)'}
+          </button>
         </div>
       </div>
+
+      {/* Import Costs Result Modal */}
+      {importResult && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setImportResult(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`px-6 pt-6 pb-4 text-center ${importResult.ok ? 'bg-green-50' : 'bg-red-50'}`}>
+              <div className={`mx-auto mb-3 w-14 h-14 rounded-full flex items-center justify-center ${importResult.ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                {importResult.ok ? (
+                  <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                )}
+              </div>
+              <h2 className={`text-lg font-bold ${importResult.ok ? 'text-green-800' : 'text-red-800'}`}>
+                {importResult.ok ? 'Cost prices imported' : 'Import failed'}
+              </h2>
+              {importResult.ok && importResult.updated === 0 && (
+                <p className="text-sm text-green-700 mt-1">No matching products were updated.</p>
+              )}
+              {!importResult.ok && (
+                <p className="text-sm text-red-700 mt-1 px-2">{importResult.message}</p>
+              )}
+            </div>
+
+            {importResult.ok && (
+              <div className="px-6 py-5 space-y-3">
+                <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3 border border-gray-200">
+                  <span className="text-sm text-gray-600">Updated</span>
+                  <span className="text-lg font-bold text-gray-800">{importResult.updated}</span>
+                </div>
+                {importResult.skippedEmpty > 0 && (
+                  <div className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3 border border-gray-200">
+                    <span className="text-sm text-gray-600">Skipped (blank cost)</span>
+                    <span className="text-lg font-bold text-gray-700">{importResult.skippedEmpty}</span>
+                  </div>
+                )}
+                {importResult.unmatched && importResult.unmatched.length > 0 && (
+                  <div className="rounded-xl bg-amber-50 px-4 py-3 border border-amber-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-amber-800">Unmatched barcodes</span>
+                      <span className="text-lg font-bold text-amber-900">{importResult.unmatched.length}</span>
+                    </div>
+                    <div className="max-h-32 overflow-y-auto text-xs font-mono text-amber-900 space-y-0.5">
+                      {importResult.unmatched.map((bc, i) => (
+                        <div key={i} className="truncate">• {bc}</div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-amber-700">These barcodes weren't found in the database. Add them as products first, then re-upload.</p>
+                  </div>
+                )}
+                {importResult.message && importResult.updated === 0 && (
+                  <p className="text-sm text-gray-600 text-center">{importResult.message}</p>
+                )}
+              </div>
+            )}
+
+            <div className="px-6 pb-6 pt-2">
+              <button
+                type="button"
+                onClick={() => setImportResult(null)}
+                className={`w-full py-2.5 rounded-[1.2rem] font-medium text-white transition-colors ${importResult.ok ? 'bg-green-700 hover:bg-green-800' : 'bg-red-700 hover:bg-red-800'}`}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Product Choice Modal */}
       {showAddChoice && (
@@ -2197,7 +2396,7 @@ export default function ProductsPage() {
                         t={t}
                         onEdit={handleEdit}
                         onDelete={setDeleteProduct}
-                        onPreview={setPreviewImages}
+                        onPreview={openProductPreview}
                         onDescription={handleDescriptionPopup}
                       />
                     ))}
@@ -2233,7 +2432,7 @@ export default function ProductsPage() {
                                       alt={p.name}
                                       loading="lazy"
                                       className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                      onClick={() => setPreviewImages({ images: imgs, index: 0 })}
+                                      onClick={() => openProductPreview(p)}
                                     />
                                     {imgs.length > 1 && (
                                       <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
@@ -2582,8 +2781,11 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Image Preview Popup with prev/next */}
-      {previewImages && (
+      {/* Image Preview Popup — steps through products with prev/next.
+          - Filename on download = product.barcode (e.g. SB-MB-0001.jpg)
+          - Products without an image show a "Not uploaded yet" placeholder
+          - Keyboard ←/→ navigate; Esc closes */}
+      {previewImages && previewProduct && (
         <div
           className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
           onClick={() => setPreviewImages(null)}
@@ -2591,7 +2793,7 @@ export default function ProductsPage() {
           <div className="relative max-w-lg max-h-[80vh] flex items-center" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={async () => {
-                const url = previewImages.images[previewImages.index];
+                const url = previewProductImageUrl;
                 if (!url) return;
                 try {
                   const res = await fetch(url);
@@ -2599,7 +2801,15 @@ export default function ProductsPage() {
                   const blobUrl = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = blobUrl;
-                  a.download = (url.split('/').pop() || 'image').split('?')[0];
+                  // Filename = barcode + extension from the original URL. Fall back to the
+                  // product name (sanitized) if there's no barcode, and to "image" otherwise.
+                  const safeBase = (previewProduct.barcode || previewProduct.name || 'image')
+                    .toString()
+                    .replace(/[^a-z0-9._-]+/gi, '_');
+                  const pathPart = url.split('?')[0];
+                  const extMatch = pathPart.match(/\.([a-z0-9]{2,5})$/i);
+                  const ext = (extMatch ? extMatch[1] : (blob.type.split('/')[1] || 'jpg')).toLowerCase();
+                  a.download = `${safeBase}.${ext}`;
                   document.body.appendChild(a);
                   a.click();
                   document.body.removeChild(a);
@@ -2609,8 +2819,9 @@ export default function ProductsPage() {
                 }
               }}
               aria-label="Download original"
-              title="Download original"
-              className="absolute -top-3 -left-3 z-10 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-amber-700"
+              title={`Download as ${previewProduct.barcode || previewProduct.name || 'image'}`}
+              disabled={!previewProductImageUrl}
+              className="absolute -top-3 -left-3 z-10 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-amber-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -2626,10 +2837,11 @@ export default function ProductsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            {/* Previous button */}
-            {previewImages.images.length > 1 && (
+            {/* Previous product */}
+            {flatVisibleProducts.length > 1 && (
               <button
-                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index - 1 + previewImages.images.length) % previewImages.images.length })}
+                onClick={() => setPreviewImages({ index: (previewImages.index - 1 + flatVisibleProducts.length) % flatVisibleProducts.length })}
+                aria-label="Previous product"
                 className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/40 rounded-full shadow-lg flex items-center justify-center text-white hover:bg-black/60 transition-colors z-10"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
@@ -2637,11 +2849,50 @@ export default function ProductsPage() {
                 </svg>
               </button>
             )}
-            <img src={previewImages.images[previewImages.index]} alt="Product" className="max-w-full max-h-[80vh] object-contain rounded-[1.2rem]" />
-            {/* Next button */}
-            {previewImages.images.length > 1 && (
+            <div className="relative inline-flex items-center justify-center min-w-[280px] min-h-[280px] bg-white/5 rounded-[1.2rem]">
+              {previewProductImageUrl ? (
+                <>
+                  {previewImgLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center z-0">
+                      <div className="w-12 h-12 border-4 border-amber-200 border-t-amber-600 rounded-full animate-spin" />
+                    </div>
+                  )}
+                  <img
+                    key={previewProductImageUrl}
+                    src={getResizedImageUrl(previewProductImageUrl, { width: 1600, quality: 80 })}
+                    alt={previewProduct.name || 'Product'}
+                    loading="eager"
+                    fetchpriority="high"
+                    onLoad={() => setPreviewImgLoading(false)}
+                    onError={(e) => {
+                      // Supabase render endpoint failed (likely free-plan limitation) — fall back
+                      // to the original full-size URL once. Then mark loading complete.
+                      if (e.target.src !== previewProductImageUrl) {
+                        e.target.src = previewProductImageUrl;
+                      } else {
+                        setPreviewImgLoading(false);
+                      }
+                    }}
+                    className={`relative z-10 max-w-full max-h-[80vh] object-contain rounded-[1.2rem] transition-opacity duration-200 ${previewImgLoading ? 'opacity-0' : 'opacity-100'}`}
+                  />
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center text-center px-8 py-16 text-gray-400">
+                  <svg className="w-16 h-16 mb-3" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  <p className="text-base font-semibold text-gray-300">Not uploaded yet</p>
+                  <p className="text-xs mt-1 text-gray-500">No image for this product</p>
+                </div>
+              )}
+            </div>
+            {/* Next product */}
+            {flatVisibleProducts.length > 1 && (
               <button
-                onClick={() => setPreviewImages({ ...previewImages, index: (previewImages.index + 1) % previewImages.images.length })}
+                onClick={() => setPreviewImages({ index: (previewImages.index + 1) % flatVisibleProducts.length })}
+                aria-label="Next product"
                 className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/40 rounded-full shadow-lg flex items-center justify-center text-white hover:bg-black/60 transition-colors z-10"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
@@ -2649,14 +2900,12 @@ export default function ProductsPage() {
                 </svg>
               </button>
             )}
-            {/* Dot indicators */}
-            {previewImages.images.length > 1 && (
-              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex gap-1.5">
-                {previewImages.images.map((_, i) => (
-                  <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === previewImages.index ? 'bg-white' : 'bg-white/40'}`} />
-                ))}
-              </div>
-            )}
+            {/* Caption: barcode + name + position */}
+            <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 text-center text-white whitespace-nowrap">
+              <div className="font-mono text-sm font-bold tracking-wide">{previewProduct.barcode || '—'}</div>
+              <div className="text-xs text-white/70 truncate max-w-[280px]">{previewProduct.name}</div>
+              <div className="text-[10px] text-white/50 mt-0.5">{previewImages.index + 1} / {flatVisibleProducts.length}</div>
+            </div>
           </div>
         </div>
       )}

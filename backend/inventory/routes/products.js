@@ -2,12 +2,25 @@ const express = require('express');
 const { Op } = require('sequelize');
 const multer = require('multer');
 const path = require('path');
+const ExcelJS = require('exceljs');
 const { Product, Location, Inventory } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const cache = require('../cache');
 const { uploadImage, deleteImage } = require('../../config/supabase');
 
 const router = express.Router();
+
+// Multer config for xlsx uploads — memory storage, 5 MB cap.
+const xlsxUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const extOk = /\.(xlsx|xls)$/i.test(file.originalname || '');
+    const mimeOk = typeof file.mimetype === 'string' && /spreadsheet|excel|xlsx|xls/i.test(file.mimetype);
+    if (extOk || mimeOk) return cb(null, true);
+    cb(new Error('Only Excel files (.xlsx) are allowed'));
+  },
+});
 
 // Multer config — memory storage so we can forward the buffer to Supabase untouched.
 // 10 MB per image; supports JPEG/PNG/GIF/WebP plus iPhone HEIC/HEIF and AVIF.
@@ -50,10 +63,12 @@ router.get('/', authenticate, async (req, res) => {
 
     const where = {};
     if (search) {
+      // Strict search — match only name and barcode. Descriptions are excluded
+      // because they often contain numbers (sizes, dates, prices) that produced
+      // spurious matches for short numeric queries.
       where[Op.or] = [
         { name: { [Op.iLike]: `%${search}%` } },
         { barcode: { [Op.iLike]: `%${search}%` } },
-        { description: { [Op.iLike]: `%${search}%` } },
       ];
     }
 
@@ -284,6 +299,161 @@ router.delete('/:id', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Delete product error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete product' });
+  }
+});
+
+// POST /import-prices - bulk update cost_price by barcode from an Excel file.
+// Auto-detects the header row by scanning the first 10 rows for cells matching
+// barcode-like and cost-like labels (English + Chinese). Rows whose cost cell is
+// empty or non-numeric are skipped. Barcodes not present in the DB are reported
+// back to the caller but never silently created.
+router.post('/import-prices', authenticate, xlsxUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No Excel file provided' });
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+    const sheet = workbook.worksheets[0];
+    if (!sheet || sheet.rowCount === 0) {
+      return res.status(400).json({ success: false, message: 'The Excel file is empty' });
+    }
+
+    const barcodeRe = /(bar.?code|条形码|sku|item.?code|product.?code)/i;
+    const rmbRe = /(rmb|人民币|yuan|cny|chinese|¥|￥|元(?!件))/i;
+    const nprRe = /(npr|nrp|rupee|nepalese|nepali|रु)/i;
+    // Used to break ties when multiple RMB columns exist (e.g. "Amount in RMB" vs "Cost in RMB")
+    // — we want the per-unit cost column, not a totals/amount column.
+    const costRe = /(cost|成本)/i;
+
+    let headerRowIndex = 0;
+    let barcodeCol = -1;
+    let costCol = -1;
+    const scanUntil = Math.min(10, sheet.rowCount);
+    for (let r = 1; r <= scanUntil; r++) {
+      const row = sheet.getRow(r);
+      let bc = -1;
+      const rmbCandidates = []; // { col, hasCost }
+      row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+        const v = String(cell.value ?? '').trim();
+        if (!v) return;
+        if (bc === -1 && barcodeRe.test(v)) bc = colNumber;
+        if (rmbRe.test(v) && !nprRe.test(v)) {
+          rmbCandidates.push({ col: colNumber, hasCost: costRe.test(v) });
+        }
+      });
+      let cc = -1;
+      if (rmbCandidates.length) {
+        const preferred = rmbCandidates.find((c) => c.hasCost);
+        cc = (preferred || rmbCandidates[0]).col;
+      }
+      if (bc !== -1 && cc !== -1) {
+        headerRowIndex = r;
+        barcodeCol = bc;
+        costCol = cc;
+        break;
+      }
+    }
+
+    if (!headerRowIndex) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not find Barcode and RMB cost columns. The RMB column header must mention "RMB" (e.g. "Cost in RMB", "RMB Price", "成本 RMB"). NPR-only headers are skipped on purpose.',
+      });
+    }
+
+    const readCellValue = (cell) => {
+      const v = cell?.value;
+      if (v === null || v === undefined) return null;
+      // ExcelJS may return formula results as { formula, result } or rich text as { richText: [...] }.
+      if (typeof v === 'object') {
+        if ('result' in v) return v.result;
+        if (Array.isArray(v.richText)) return v.richText.map((t) => t.text).join('');
+        if (v instanceof Date) return v;
+      }
+      return v;
+    };
+
+    const updates = [];
+    const skippedEmpty = [];
+    for (let r = headerRowIndex + 1; r <= sheet.rowCount; r++) {
+      const row = sheet.getRow(r);
+      const barcode = String(readCellValue(row.getCell(barcodeCol)) ?? '').trim();
+      if (!barcode) continue;
+      const costRaw = readCellValue(row.getCell(costCol));
+      if (costRaw === null || costRaw === undefined || costRaw === '') {
+        skippedEmpty.push(barcode);
+        continue;
+      }
+      const costNum = parseFloat(String(costRaw).replace(/[^0-9.\-]/g, ''));
+      if (!Number.isFinite(costNum) || costNum <= 0) {
+        skippedEmpty.push(barcode);
+        continue;
+      }
+      updates.push({ barcode, cost: costNum });
+    }
+
+    if (updates.length === 0) {
+      return res.json({
+        success: true,
+        total: skippedEmpty.length,
+        updated: 0,
+        skippedEmpty: skippedEmpty.length,
+        unmatched: [],
+        message: 'No rows with a cost value were found',
+      });
+    }
+
+    const products = await Product.findAll({
+      where: { barcode: { [Op.in]: updates.map((u) => u.barcode) } },
+      attributes: ['barcode'],
+    });
+    const known = new Set(products.map((p) => p.barcode));
+
+    const matched = [];
+    const unmatched = [];
+    for (const u of updates) {
+      if (known.has(u.barcode)) matched.push(u);
+      else unmatched.push(u.barcode);
+    }
+
+    // Bulk-update every matched row in a single SQL statement. Per-row p.update() calls
+    // would exhaust the pool (max=3) when there are hundreds of rows — see the
+    // SequelizeConnectionAcquireTimeoutError this replaced. Chunked to stay well under
+    // the Postgres bind-parameter ceiling (65 535).
+    const sequelize = Product.sequelize;
+    const CHUNK = 500; // 500 rows × 2 binds = 1000 binds per query
+    let updatedCount = 0;
+    for (let i = 0; i < matched.length; i += CHUNK) {
+      const chunk = matched.slice(i, i + CHUNK);
+      const valuesSql = chunk.map((_, j) => `($${j * 2 + 1}, $${j * 2 + 2}::numeric)`).join(', ');
+      const bind = chunk.flatMap((m) => [m.barcode, m.cost]);
+      const [, meta] = await sequelize.query(
+        `UPDATE products AS p
+         SET cost_price = v.cost, "updatedAt" = NOW()
+         FROM (VALUES ${valuesSql}) AS v(barcode, cost)
+         WHERE p.barcode = v.barcode`,
+        { bind }
+      );
+      updatedCount += Number(meta?.rowCount ?? chunk.length);
+    }
+
+    cache.invalidate('products');
+
+    res.json({
+      success: true,
+      total: updates.length + skippedEmpty.length,
+      updated: updatedCount,
+      skippedEmpty: skippedEmpty.length,
+      unmatched,
+    });
+  } catch (error) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ success: false, message: 'File too large — maximum 5 MB.' });
+    }
+    console.error('Import cost prices error:', error);
+    res.status(500).json({ success: false, message: 'Failed to import cost prices' });
   }
 });
 

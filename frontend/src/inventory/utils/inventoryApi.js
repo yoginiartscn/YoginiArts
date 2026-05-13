@@ -17,6 +17,21 @@ export const getImageUrl = (url) => {
   return `${SERVER_ORIGIN}${url}`;
 };
 
+// Return a resized variant of a Supabase Storage public URL using the /render/image/ endpoint.
+// On Supabase Pro plans this serves a CDN-cached resized image; on free plans the URL may 404,
+// in which case callers should fall back to the original URL via an onError handler.
+// Non-Supabase URLs (blob:, local /uploads/, other hosts) are returned unchanged.
+export const getResizedImageUrl = (url, { width, quality = 80 } = {}) => {
+  if (!url) return null;
+  if (url.startsWith('blob:')) return url;
+  const marker = '/storage/v1/object/public/';
+  const idx = url.indexOf(marker);
+  if (idx === -1 || !width) return url;
+  const rendered = url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/');
+  const params = [`width=${width}`, `quality=${quality}`, 'resize=contain'];
+  return `${rendered}?${params.join('&')}`;
+};
+
 export const productsApi = {
   getAll: (api, search = '') => api.get(`/products${search ? `?search=${search}` : ''}`),
   getById: (api, id) => api.get(`/products/${id}`),
@@ -48,6 +63,11 @@ export const productsApi = {
     return api.put(`/products/${id}`, data);
   },
   delete: (api, id) => api.delete(`/products/${id}`),
+  importPrices: (api, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/products/import-prices', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
 };
 
 export const locationsApi = {
