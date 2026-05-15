@@ -472,6 +472,7 @@ export default function ProductsPage() {
     const upper = barcode.toUpperCase();
     if (upper.startsWith('SB')) return 'Singing Bowl';
     if (upper.startsWith('YA-LK')) return 'Thanka Locket';
+    if (upper.startsWith('YA-CR') || upper.startsWith('YA-FR')) return 'Others';
     if (upper.startsWith('YA')) return 'Thanka';
     if (upper.startsWith('MA')) return 'Jewelleries';
     if (upper.startsWith('TL')) return 'Thanka Locket';

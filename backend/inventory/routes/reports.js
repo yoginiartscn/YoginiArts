@@ -354,11 +354,10 @@ router.get('/export/quotation', authenticate, async (req, res) => {
     const allCategories = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
     const categoriesToExport = category ? [category] : allCategories;
 
-    // Build the filename and flush the download headers BEFORE any slow work.
-    // This makes the browser show the file in its downloads bar the instant the
-    // request arrives, rather than waiting until the workbook is finished. The
-    // body streams in afterward. Filename depends only on query params, which we
-    // already have, so it's safe to commit headers this early.
+    // Build the filename. Headers are written later, after the workbook buffer is
+    // ready, so that any failure during image downloads / sheet generation can
+    // still return a clean 500 — flushing headers up-front would commit a 200
+    // xlsx response and any later throw would deliver a blank/truncated file.
     const catFileMap = {
       'Singing Bowl': 'SingingBowl',
       'Thanka': 'Thanka',
@@ -378,11 +377,6 @@ router.get('/export/quotation', authenticate, async (req, res) => {
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const datePart = `${dd}-${mm}-${now.getFullYear()}`;
     const fileName = `Yogini_${catPart}${locPart}_${pricePart}_${datePart}.xlsx`;
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.setHeader('Cache-Control', 'no-store');
-    if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
     // Load template to copy logo and styling from it
     const templatePath = path.join(TEMPLATES_DIR, 'SingingBowlTemplates.xlsx');
@@ -566,12 +560,22 @@ router.get('/export/quotation', authenticate, async (req, res) => {
       setupSheet(sheet, getCatConfig('Singing Bowl'));
     }
 
-    // Headers were already sent at the top of the handler; just stream the body.
-    await workbook.xlsx.write(res);
-    res.end();
+    // Buffer the workbook fully, then send. Writing to a buffer first means a
+    // mid-build error surfaces as a clean 500 (handled in catch below) instead
+    // of leaving the client with a half-written attachment that opens as blank.
+    const xlsxBuffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Length', xlsxBuffer.length);
+    res.end(Buffer.isBuffer(xlsxBuffer) ? xlsxBuffer : Buffer.from(xlsxBuffer));
   } catch (error) {
     console.error('Export quotation error:', error);
-    res.status(500).json({ success: false, message: 'Export failed' });
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Export failed' });
+    } else {
+      res.end();
+    }
   }
 });
 
