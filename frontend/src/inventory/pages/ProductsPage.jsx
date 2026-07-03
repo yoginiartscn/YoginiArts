@@ -4,6 +4,51 @@ import { useApi } from '../hooks/useApi';
 import { productsApi, reportsApi, locationsApi, getImageUrl, getResizedImageUrl } from '../utils/inventoryApi';
 import { useLanguage } from '../context/LanguageContext';
 
+// Robust product thumbnail: Supabase image URLs occasionally fail to load on the first
+// request (CDN cold start / transient network), which previously left a broken/blank box.
+// This retries the load a few times with a cache-busting param + small backoff before
+// finally showing an "N/A" placeholder, so a real image is shown whenever one exists.
+function ProductThumb({ src, alt, onClick, sizeClass, roundClass, count }) {
+  const [currentSrc, setCurrentSrc] = useState(src);
+  const [failed, setFailed] = useState(false);
+  const retriesRef = useRef(0);
+  const MAX_RETRIES = 3;
+
+  const handleError = useCallback(() => {
+    if (retriesRef.current < MAX_RETRIES) {
+      const attempt = retriesRef.current + 1;
+      retriesRef.current = attempt;
+      // Re-request with a cache-busting param after a short backoff so a transient
+      // failure doesn't permanently leave the slot empty.
+      setTimeout(() => {
+        setCurrentSrc(`${src}${src.includes('?') ? '&' : '?'}retry=${attempt}`);
+      }, 400 * attempt);
+    } else {
+      setFailed(true);
+    }
+  }, [src]);
+
+  return (
+    <div className={`relative ${sizeClass} flex-shrink-0`}>
+      {failed ? (
+        <div className={`${sizeClass} ${roundClass} bg-gray-100 flex items-center justify-center text-gray-400 text-xs`}>N/A</div>
+      ) : (
+        <img
+          src={currentSrc}
+          alt={alt}
+          loading="lazy"
+          className={`${sizeClass} ${roundClass} object-cover ${onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+          onClick={onClick}
+          onError={handleError}
+        />
+      )}
+      {count > 1 && (
+        <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{count}</span>
+      )}
+    </div>
+  );
+}
+
 const MobileProductCard = React.memo(function MobileProductCard({ p, showWeight, showDescription, t, onEdit, onDelete, onPreview, onDescription }) {
   const imgs = [getImageUrl(p.image_url), getImageUrl(p.image_url_2)].filter(Boolean);
   return (
@@ -13,18 +58,15 @@ const MobileProductCard = React.memo(function MobileProductCard({ p, showWeight,
     >
       <div className="flex items-start gap-3">
         {imgs.length > 0 ? (
-          <div className="relative w-16 h-16 flex-shrink-0">
-            <img
-              src={imgs[0]}
-              alt={p.name}
-              loading="lazy"
-              className="w-16 h-16 rounded-xl object-cover"
-              onClick={() => onPreview(p)}
-            />
-            {imgs.length > 1 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
-            )}
-          </div>
+          <ProductThumb
+            key={imgs[0]}
+            src={imgs[0]}
+            alt={p.name}
+            onClick={() => onPreview(p)}
+            sizeClass="w-16 h-16"
+            roundClass="rounded-xl"
+            count={imgs.length}
+          />
         ) : (
           <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400 text-xs flex-shrink-0">N/A</div>
         )}
@@ -1016,13 +1058,15 @@ export default function ProductsPage() {
     }
   };
 
-  // Re-encode large PNGs to high-quality JPEG before upload.
-  // Browsers serialize clipboard images as PNG, so pasted screenshots can be 5–15 MB.
-  // Quality 0.92 is visually indistinguishable but typically 80–95% smaller, making the
-  // upload finish in seconds instead of minutes. Camera/gallery JPEGs are returned untouched.
+  // Re-encode every photo to JPEG at 80% quality before upload. This keeps the original
+  // resolution (no downscaling) but shrinks the file — 80% quality is visually near-identical
+  // to full quality yet noticeably smaller, so it uses less Supabase storage and uploads faster.
+  // Animated GIFs and already-tiny files are left untouched, and we keep whichever is smaller.
+  const UPLOAD_JPEG_QUALITY = 0.8;
   const maybeCompressImage = async (file) => {
     if (!file || !file.type || !file.type.startsWith('image/')) return file;
-    if (file.type !== 'image/png' || file.size < 800 * 1024) return file;
+    if (file.type === 'image/gif') return file; // don't flatten animations
+    if (file.size < 200 * 1024) return file;     // already small enough to skip
     try {
       const bitmap = await createImageBitmap(file);
       const canvas = document.createElement('canvas');
@@ -1031,9 +1075,9 @@ export default function ProductsPage() {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(bitmap, 0, 0);
       bitmap.close && bitmap.close();
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', UPLOAD_JPEG_QUALITY));
       if (!blob || blob.size >= file.size) return file;
-      const baseName = (file.name || 'pasted-image').replace(/\.[^.]+$/, '');
+      const baseName = (file.name || 'photo').replace(/\.[^.]+$/, '');
       return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
     } catch {
       return file;
@@ -2290,7 +2334,7 @@ export default function ProductsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-bold text-center text-gray-800 mb-1">{t('addImage') || 'Add image'}</h3>
-            <p className="text-xs text-gray-500 text-center mb-4">{t('originalQualityNote') || 'Uploads keep the original resolution and quality'}</p>
+            <p className="text-xs text-gray-500 text-center mb-4">{t('originalQualityNote') || 'Photos are optimized for fast loading'}</p>
             <div className="space-y-2">
               <button
                 type="button"
@@ -2427,18 +2471,15 @@ export default function ProductsPage() {
                               {(() => {
                                 const imgs = [getImageUrl(p.image_url), getImageUrl(p.image_url_2)].filter(Boolean);
                                 return imgs.length > 0 ? (
-                                  <div className="relative w-10 h-10">
-                                    <img
-                                      src={imgs[0]}
-                                      alt={p.name}
-                                      loading="lazy"
-                                      className="w-10 h-10 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                                      onClick={() => openProductPreview(p)}
-                                    />
-                                    {imgs.length > 1 && (
-                                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{imgs.length}</span>
-                                    )}
-                                  </div>
+                                  <ProductThumb
+                                    key={imgs[0]}
+                                    src={imgs[0]}
+                                    alt={p.name}
+                                    onClick={() => openProductPreview(p)}
+                                    sizeClass="w-10 h-10"
+                                    roundClass="rounded-lg"
+                                    count={imgs.length}
+                                  />
                                 ) : (
                                   <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">N/A</div>
                                 );

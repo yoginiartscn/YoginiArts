@@ -97,8 +97,9 @@ export default function TransfersPage() {
       setLocations(locs);
       setTransfers(txRes.data.data);
       setInventoryData(invRes.data.data);
+      // Only default to Guangzhou on first load — don't override a user's manual choice on refresh
       const defaultLoc = locs.find((l) => l.name === 'Guangzhou Warehouse');
-      if (defaultLoc) setFromLocationId(defaultLoc.id);
+      if (defaultLoc) setFromLocationId((prev) => prev || defaultLoc.id);
     }).finally(() => setLoading(false));
   };
 
@@ -348,20 +349,48 @@ export default function TransfersPage() {
     setCart(cart.filter((item) => item.product_id !== productId));
   };
 
+  // Select all products that have stock at the source location and add them to the cart
+  const handleSelectAll = () => {
+    if (!fromLocationId) return;
+    const inStockProducts = products.filter((p) => getStock(p.id, fromLocationId) > 0);
+    if (inStockProducts.length === 0) {
+      setMessage({ type: 'error', text: `No products in stock at ${fromLocation?.name || 'the selected location'}.` });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+    setCart(inStockProducts.map((p) => {
+      const existing = cart.find((item) => item.product_id === p.id);
+      return {
+        product_id: p.id,
+        product_name: p.name,
+        product_barcode: p.barcode,
+        product_image: p.image_url,
+        product_image_2: p.image_url_2,
+        product_weight: p.weight,
+        quantity: existing ? existing.quantity : getStock(p.id, fromLocationId),
+      };
+    }));
+  };
+
+  const handleClearAll = () => {
+    setCart([]);
+  };
+
   const handleCheckout = async () => {
     if (!fromLocationId || !toLocationId || cart.length === 0) return;
     setProcessing(true);
     setMessage(null);
 
     try {
-      for (const item of cart) {
-        await inventoryApi.transfer(api, {
+      // Single batched request — all items move in one DB transaction on the server
+      await inventoryApi.transferBatch(api, {
+        from_location_id: fromLocationId,
+        to_location_id: toLocationId,
+        items: cart.map((item) => ({
           product_id: item.product_id,
-          from_location_id: fromLocationId,
-          to_location_id: toLocationId,
           quantity: item.quantity,
-        });
-      }
+        })),
+      });
 
       setMessage({ type: 'success', text: `Transfer complete! ${cart.length} item(s) moved successfully.` });
       setCart([]);
@@ -623,6 +652,21 @@ export default function TransfersPage() {
             >
               {t('addMultiple')}
             </button>
+            <button
+              onClick={handleSelectAll}
+              disabled={!fromLocationId}
+              className="px-4 py-2 bg-blue-700 text-white rounded-[1.2rem] hover:bg-blue-800 font-medium text-sm disabled:opacity-40 transition-colors"
+            >
+              {t('selectAll')}
+            </button>
+            {cart.length > 0 && (
+              <button
+                onClick={handleClearAll}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium text-sm transition-colors"
+              >
+                {t('clearAll')}
+              </button>
+            )}
           </div>
         </div>
 

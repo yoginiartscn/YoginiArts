@@ -43,7 +43,8 @@ export const productsApi = {
       Object.entries(data).forEach(([key, val]) => {
         if (val !== undefined && val !== null && key !== 'image_url' && key !== 'image_url_2') formData.append(key, val);
       });
-      return api.post('/products', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      // Let the browser set Content-Type with the correct multipart boundary
+      return api.post('/products', formData);
     }
     const cleanData = { ...data };
     if (!cleanData.image_url) delete cleanData.image_url;
@@ -58,7 +59,13 @@ export const productsApi = {
       Object.entries(data).forEach(([key, val]) => {
         if (val !== undefined && val !== null && key !== 'image_url' && key !== 'image_url_2') formData.append(key, val);
       });
-      return api.put(`/products/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      // Only send an existing image URL when there's a real value. We must NOT send an empty
+      // string for the slot we're not replacing — the backend would overwrite the saved URL
+      // with '' and the image would disappear. Sending a non-empty URL preserves the other slot.
+      if (data.image_url) formData.append('image_url', data.image_url);
+      if (data.image_url_2) formData.append('image_url_2', data.image_url_2);
+      // Let the browser set Content-Type with the correct multipart boundary
+      return api.put(`/products/${id}`, formData);
     }
     return api.put(`/products/${id}`, data);
   },
@@ -81,6 +88,7 @@ export const inventoryApi = {
   getAll: (api, locationId = '') => api.get(`/inventory${locationId ? `?location_id=${locationId}` : ''}`),
   stockIn: (api, data) => api.post('/inventory/stock-in', data),
   transfer: (api, data) => api.post('/inventory/transfer', data),
+  transferBatch: (api, data) => api.post('/inventory/transfer-batch', data),
   sale: (api, data) => api.post('/inventory/sale', data),
 };
 

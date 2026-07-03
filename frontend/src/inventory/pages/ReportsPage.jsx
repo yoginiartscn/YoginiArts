@@ -116,31 +116,59 @@ export default function ReportsPage() {
     window.URL.revokeObjectURL(url);
   };
 
-  const handleReportDownload = async () => {
+  const handleReportDownload = () => {
     if (!reportCategory) return;
+
+    // Native browser download — same approach as the products-panel quotation export.
+    // We build the URL with the auth token in the query string and load it in a hidden
+    // iframe; the browser fetches it directly and shows the download (with its own
+    // progress UI) in the downloads bar. This avoids our app buffering a large blob and
+    // sidesteps the gateway/proxy timeout that made the old axios download fail on big,
+    // image-heavy reports.
+    const token = localStorage.getItem('inv_token');
+    if (!token) {
+      alert('You are not signed in. Please log in again.');
+      return;
+    }
+    const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:5300/api');
+
+    const params = new URLSearchParams({ token });
+    if (reportLocation) params.set('location_id', reportLocation);
+
+    let endpoint;
+    if (reportCategory === 'sale') {
+      endpoint = 'sales';
+      if (reportDateFrom) params.set('start_date', reportDateFrom);
+      if (reportDateTo) params.set('end_date', reportDateTo);
+    } else if (reportCategory === 'stock') {
+      endpoint = 'excel';
+    } else if (reportCategory === 'transfer') {
+      endpoint = 'transfers';
+    } else {
+      return;
+    }
+
+    const url = `${API_BASE}/inventory/reports/export/${endpoint}?${params.toString()}`;
+
+    // Show the loading state while the browser prepares the file, then hand off to the
+    // browser's downloads bar. The iframe's onload fires once the response arrives.
     setExporting(true);
-    try {
-      if (reportCategory === 'sale') {
-        const res = await reportsApi.exportSales(api, {
-          locationId: reportLocation,
-          startDate: reportDateFrom,
-          endDate: reportDateTo,
-        });
-        downloadFile(res.data, 'yogini-arts-sales-report.xlsx');
-      } else if (reportCategory === 'stock') {
-        const res = await reportsApi.exportExcel(api, reportLocation);
-        downloadFile(res.data, 'yogini-arts-stock-report.xlsx');
-      } else if (reportCategory === 'transfer') {
-        const res = await reportsApi.exportTransfers(api, reportLocation);
-        downloadFile(res.data, 'yogini-arts-transfer-report.xlsx');
-      }
+    let iframe = document.getElementById('inv-report-download-iframe');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'inv-report-download-iframe';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+    }
+    const done = () => {
+      setExporting(false);
       setShowDownloadModal(false);
       resetReportForm();
-    } catch (err) {
-      alert('Export failed');
-    } finally {
-      setExporting(false);
-    }
+    };
+    iframe.onload = done;
+    // Fallback in case onload doesn't fire for an attachment response in some browsers.
+    setTimeout(done, 2500);
+    iframe.src = url;
   };
 
   const resetReportForm = () => {

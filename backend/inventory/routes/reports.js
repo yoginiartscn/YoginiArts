@@ -56,28 +56,55 @@ async function mapWithConcurrency(items, mapper, concurrency = 12) {
   return results;
 }
 
-// ─── embedImages helper — place 1 or 2 images in a cell ──────────────────────
-// options.singleImage: if true, only show first image (for quotation exports)
-// options.maxSize: max pixel dimension (default IMG_FIT)
+// ─── fetchImageData — download one image + measure it ─────────────────────────
+// Returns { buffer, extension, dimensions } or null. Network-bound; meant to be
+// run in parallel via prefetchRowImages so a big export isn't N sequential RTTs.
+async function fetchImageData(url) {
+  if (!url) return null;
+  try {
+    const buffer = await downloadImage(url);
+    if (!buffer) return null;
+    const ext = path.extname(url.split('?')[0]).replace('.', '').toLowerCase() || 'jpeg';
+    return { buffer, extension: ext === 'jpg' ? 'jpeg' : ext, dimensions: imageSize(buffer) };
+  } catch (err) {
+    console.error('fetchImageData error:', err?.message || err);
+    return null;
+  }
+}
+
+// ─── prefetchRowImages — download every row's images up front, in parallel ─────
+// getUrls(item) -> [url1, url2]. Returns an array aligned to `items`, each entry
+// being [data1|null, data2|null]. This replaces the old per-row sequential
+// download: ~840ms × N images becomes ~N/12 × 840ms, so reports build in seconds.
+async function prefetchRowImages(items, getUrls, concurrency = 12) {
+  return mapWithConcurrency(items, async (item) => {
+    const [u1, u2] = getUrls(item);
+    const [d1, d2] = await Promise.all([fetchImageData(u1), fetchImageData(u2)]);
+    return [d1, d2];
+  }, concurrency);
+}
+
+// ─── placeImages helper — place 1 or 2 pre-fetched images in a cell ───────────
+// imgData1/imgData2: { buffer, extension, dimensions } objects (or null), already
+// downloaded by prefetchRowImages — this function does NO network I/O.
+// options.singleImage: if true, only show the first image.
+// options.maxSize: max pixel dimension (default IMG_FIT).
 // Uses tl+br anchoring so the image is pinned exactly to cell boundaries.
 // Excel row height is in points (1pt ≈ 1.333px at 96 DPI).
-async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex, options = {}) {
+function placeImages(workbook, sheet, imgData1, imgData2, col, rowIndex, options = {}) {
   const singleImage = options.singleImage || false;
   const maxSize = options.maxSize || IMG_FIT;
 
-  const allUrls = [imageUrl1, imageUrl2].filter(Boolean);
-  const urls = singleImage ? allUrls.slice(0, 1) : allUrls;
-  if (urls.length === 0) return { hasImage: false, imgHeight: 0 };
+  const allData = [imgData1, imgData2].filter(Boolean);
+  const datas = singleImage ? allData.slice(0, 1) : allData;
+  if (datas.length === 0) return { hasImage: false, imgHeight: 0 };
 
   const cellWidthPx = IMG_COL_WIDTH * 7.5;
   let maxH = 0;
 
-  for (let i = 0; i < urls.length; i++) {
+  for (let i = 0; i < datas.length; i++) {
     try {
-      const imgBuffer = await downloadImage(urls[i]);
-      if (!imgBuffer) continue;
-      const ext = path.extname(urls[i].split('?')[0]).replace('.', '').toLowerCase() || 'jpeg';
-      const dimensions = imageSize(imgBuffer);
+      const { buffer, extension, dimensions } = datas[i];
 
       let w, h;
       if (singleImage) {
@@ -93,7 +120,7 @@ async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex,
           h = Math.round(dimensions.height * scale);
         }
       } else {
-        const slotWidth = urls.length === 1 ? cellWidthPx : cellWidthPx / 2;
+        const slotWidth = datas.length === 1 ? cellWidthPx : cellWidthPx / 2;
         const maxImgW = slotWidth - 8;
         const scaleW = maxImgW / dimensions.width;
         const scaleH = maxSize / dimensions.height;
@@ -104,10 +131,7 @@ async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex,
 
       if (h > maxH) maxH = h;
 
-      const imgId = workbook.addImage({
-        buffer: imgBuffer,
-        extension: ext === 'jpg' ? 'jpeg' : ext,
-      });
+      const imgId = workbook.addImage({ buffer, extension });
 
       // Use tl+br cell anchoring so image fits exactly in the cell
       const c = Math.floor(col);
@@ -125,7 +149,7 @@ async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex,
           br: { col: c, row: rowIndex, nativeCol: c, nativeRow: rowIndex, nativeColOff: padXEmu + imgWEmu, nativeRowOff: padYEmu + imgHEmu },
         });
       } else {
-        const slotWidth = urls.length === 1 ? cellWidthPx : cellWidthPx / 2;
+        const slotWidth = datas.length === 1 ? cellWidthPx : cellWidthPx / 2;
         const slotStartX = i * slotWidth;
         const slotPadX = Math.round((slotStartX + Math.max(0, (slotWidth - w) / 2)) * PX_TO_EMU);
         const cellH = IMG_FIT;
@@ -136,7 +160,7 @@ async function embedImages(workbook, sheet, imageUrl1, imageUrl2, col, rowIndex,
         });
       }
     } catch (err) {
-      console.error('embedImages error:', err?.message || err);
+      console.error('placeImages error:', err?.message || err);
     }
   }
 
@@ -197,6 +221,20 @@ function setCell(row, col, value, font, align) {
   cell.font = font || dataFont;
   cell.alignment = align || dataAlign;
   cell.border = thinBorder;
+}
+
+// ─── sendWorkbook — buffer a finished workbook fully, then send as .xlsx ────────
+// Buffering the whole file first (instead of streaming workbook.xlsx.write(res))
+// means a mid-build error surfaces as a clean 500 — handled by the caller's catch —
+// rather than leaving the client with a half-written attachment that opens blank.
+// This is the same approach the quotation export uses.
+async function sendWorkbook(res, workbook, fileName) {
+  const xlsxBuffer = await workbook.xlsx.writeBuffer();
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Length', xlsxBuffer.length);
+  res.end(Buffer.isBuffer(xlsxBuffer) ? xlsxBuffer : Buffer.from(xlsxBuffer));
 }
 
 // ─── GET /transactions ─────────────────────────────────────────────────────────
@@ -613,13 +651,17 @@ router.get('/export/transfers', authenticate, async (req, res) => {
       if (loc) sheet.name = loc.name;
     }
 
+    // Download all row images in parallel up front, then build rows from buffers.
+    const imageData = await prefetchRowImages(transfers, (tx) => [tx.product?.image_url, tx.product?.image_url_2]);
+
     const startRow = 4;
     for (let idx = 0; idx < transfers.length; idx++) {
       const tx = transfers[idx];
       const row = sheet.getRow(startRow + idx);
 
       setCell(row, 1, '');
-      const { hasImage, imgHeight } = await embedImages(workbook, sheet, tx.product?.image_url, tx.product?.image_url_2, 0, startRow + idx - 1);
+      const [d1, d2] = imageData[idx] || [];
+      const { hasImage, imgHeight } = placeImages(workbook, sheet, d1, d2, 0, startRow + idx - 1);
       row.height = hasImage ? imgHeight : 25;
 
       setCell(row, 2, tx.product?.name || '-', { ...dataFont, bold: true });
@@ -633,13 +675,14 @@ router.get('/export/transfers', authenticate, async (req, res) => {
       : 'All_Locations';
     const dateStr = new Date().toISOString().slice(0, 10);
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${locName}_${dateStr}_transfer.xlsx`);
-    await workbook.xlsx.write(res);
-    res.end();
+    await sendWorkbook(res, workbook, `${locName}_${dateStr}_transfer.xlsx`);
   } catch (error) {
     console.error('Export transfers error:', error);
-    res.status(500).json({ success: false, message: 'Export failed' });
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Export failed' });
+    } else {
+      res.end();
+    }
   }
 });
 
@@ -672,13 +715,17 @@ router.get('/export/excel', authenticate, async (req, res) => {
 
     const { workbook, sheet } = await loadTemplate('SingingBowlTemplates.xlsx', 'Products', headers, colWidths);
 
+    // Download all row images in parallel up front, then build rows from buffers.
+    const imageData = await prefetchRowImages(products, (p) => [p.image_url, p.image_url_2]);
+
     const startRow = 4;
     for (let idx = 0; idx < products.length; idx++) {
       const product = products[idx];
       const row = sheet.getRow(startRow + idx);
 
       setCell(row, 1, '');
-      const { hasImage, imgHeight } = await embedImages(workbook, sheet, product.image_url, product.image_url_2, 0, startRow + idx - 1);
+      const [d1, d2] = imageData[idx] || [];
+      const { hasImage, imgHeight } = placeImages(workbook, sheet, d1, d2, 0, startRow + idx - 1);
       row.height = hasImage ? imgHeight : 25;
 
       setCell(row, 2, product.name || '-', { ...dataFont, bold: true });
@@ -692,13 +739,14 @@ router.get('/export/excel', authenticate, async (req, res) => {
       }
     }
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=yogini-arts-products.xlsx');
-    await workbook.xlsx.write(res);
-    res.end();
+    await sendWorkbook(res, workbook, 'yogini-arts-products.xlsx');
   } catch (error) {
     console.error('Export error:', error);
-    res.status(500).json({ success: false, message: 'Export failed' });
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Export failed' });
+    } else {
+      res.end();
+    }
   }
 });
 
@@ -737,13 +785,17 @@ router.get('/export/sales', authenticate, async (req, res) => {
 
     const { workbook, sheet } = await loadTemplate('SaleTemplates.xlsx', 'Sales Report', headers, colWidths);
 
+    // Download all row images in parallel up front, then build rows from buffers.
+    const imageData = await prefetchRowImages(sales, (tx) => [tx.product?.image_url, tx.product?.image_url_2]);
+
     const startRow = 4;
     for (let idx = 0; idx < sales.length; idx++) {
       const tx = sales[idx];
       const row = sheet.getRow(startRow + idx);
 
       setCell(row, 1, '');
-      const { hasImage, imgHeight } = await embedImages(workbook, sheet, tx.product?.image_url, tx.product?.image_url_2, 0, startRow + idx - 1);
+      const [d1, d2] = imageData[idx] || [];
+      const { hasImage, imgHeight } = placeImages(workbook, sheet, d1, d2, 0, startRow + idx - 1);
       row.height = hasImage ? imgHeight : 25;
 
       setCell(row, 2, tx.product?.name || '-', { ...dataFont, bold: true });
@@ -761,13 +813,14 @@ router.get('/export/sales', authenticate, async (req, res) => {
       : 'All_Locations';
     const dateStr = new Date().toISOString().slice(0, 10);
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${locName}_${dateStr}_sales.xlsx`);
-    await workbook.xlsx.write(res);
-    res.end();
+    await sendWorkbook(res, workbook, `${locName}_${dateStr}_sales.xlsx`);
   } catch (error) {
     console.error('Export sales error:', error);
-    res.status(500).json({ success: false, message: 'Export sales failed' });
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Export sales failed' });
+    } else {
+      res.end();
+    }
   }
 });
 

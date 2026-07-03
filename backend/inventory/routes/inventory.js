@@ -164,6 +164,97 @@ router.post('/transfer', authenticate, async (req, res) => {
   }
 });
 
+// POST /transfer-batch - transfer many products at once in a single DB transaction
+router.post('/transfer-batch', authenticate, async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { from_location_id, to_location_id, items, notes } = req.body;
+
+    if (!from_location_id || !to_location_id || !Array.isArray(items) || items.length === 0) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'from_location_id, to_location_id, and a non-empty items array are required' });
+    }
+
+    if (from_location_id === to_location_id) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Source and destination locations must be different' });
+    }
+
+    // Normalise + merge duplicate product entries, validate quantities
+    const qtyByProduct = new Map();
+    for (const item of items) {
+      const pid = item.product_id;
+      const qty = parseInt(item.quantity, 10);
+      if (!pid || !qty || qty <= 0) {
+        await t.rollback();
+        return res.status(400).json({ success: false, message: 'Each item needs a product_id and a positive quantity' });
+      }
+      qtyByProduct.set(pid, (qtyByProduct.get(pid) || 0) + qty);
+    }
+
+    const productIds = [...qtyByProduct.keys()];
+
+    // Fetch all source + destination inventory rows up front (2 queries)
+    const [sourceRows, destRows] = await Promise.all([
+      Inventory.findAll({ where: { product_id: productIds, location_id: from_location_id }, transaction: t }),
+      Inventory.findAll({ where: { product_id: productIds, location_id: to_location_id }, transaction: t }),
+    ]);
+
+    const sourceByProduct = new Map(sourceRows.map((r) => [String(r.product_id), r]));
+    const destByProduct = new Map(destRows.map((r) => [String(r.product_id), r]));
+
+    // Validate stock for every product before mutating anything
+    for (const [pid, qty] of qtyByProduct) {
+      const src = sourceByProduct.get(String(pid));
+      if (!src || src.quantity < qty) {
+        await t.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock at source location for product ${pid}`,
+          product_id: pid,
+        });
+      }
+    }
+
+    // Build bulk upsert rows (absolute new quantities) for source and destination
+    const upsertRows = [];
+    const txRows = [];
+    for (const [pid, qty] of qtyByProduct) {
+      const src = sourceByProduct.get(String(pid));
+      const dest = destByProduct.get(String(pid));
+
+      upsertRows.push({ product_id: pid, location_id: from_location_id, quantity: src.quantity - qty });
+      upsertRows.push({ product_id: pid, location_id: to_location_id, quantity: (dest ? dest.quantity : 0) + qty });
+
+      txRows.push({
+        type: 'transfer',
+        product_id: pid,
+        from_location_id,
+        to_location_id,
+        quantity: qty,
+        notes,
+        created_by: req.user.id,
+      });
+    }
+
+    // Single bulk upsert (relies on the unique index on product_id + location_id)
+    // and a single bulk insert for the transaction log.
+    await Inventory.bulkCreate(upsertRows, {
+      updateOnDuplicate: ['quantity', 'updatedAt'],
+      transaction: t,
+    });
+    await Transaction.bulkCreate(txRows, { transaction: t });
+
+    await t.commit();
+    cache.invalidateAll();
+    res.json({ success: true, message: 'Transfer completed successfully', count: txRows.length });
+  } catch (error) {
+    await t.rollback();
+    console.error('Batch transfer error:', error);
+    res.status(500).json({ success: false, message: 'Batch transfer failed' });
+  }
+});
+
 // POST /sale
 router.post('/sale', authenticate, async (req, res) => {
   const t = await sequelize.transaction();

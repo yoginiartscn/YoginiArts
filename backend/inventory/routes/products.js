@@ -111,12 +111,19 @@ router.post('/', authenticate, optionalUpload([{ name: 'image', maxCount: 1 }, {
     // Parallelize the two Supabase uploads.
     let finalImageUrl = (image_url && !image_url.startsWith('blob:')) ? image_url : null;
     let finalImageUrl2 = (image_url_2 && !image_url_2.startsWith('blob:')) ? image_url_2 : null;
-    const [newUrl1, newUrl2] = await Promise.all([
-      req.files?.image?.[0] ? uploadImage(req.files.image[0].buffer, req.files.image[0].originalname) : Promise.resolve(null),
-      req.files?.image2?.[0] ? uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname) : Promise.resolve(null),
-    ]);
-    if (newUrl1) finalImageUrl = newUrl1;
-    if (newUrl2) finalImageUrl2 = newUrl2;
+    if (req.files?.image?.[0] || req.files?.image2?.[0]) {
+      try {
+        const [newUrl1, newUrl2] = await Promise.all([
+          req.files?.image?.[0] ? uploadImage(req.files.image[0].buffer, req.files.image[0].originalname) : Promise.resolve(null),
+          req.files?.image2?.[0] ? uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname) : Promise.resolve(null),
+        ]);
+        if (newUrl1) finalImageUrl = newUrl1;
+        if (newUrl2) finalImageUrl2 = newUrl2;
+      } catch (uploadErr) {
+        console.error('Image upload error (create):', uploadErr.message || uploadErr);
+        return res.status(503).json({ success: false, message: 'Image upload failed. Please check your connection and try again.' });
+      }
+    }
 
     const product = await Product.create({
       name,
@@ -198,17 +205,21 @@ router.put('/:id', authenticate, optionalUpload([{ name: 'image', maxCount: 1 },
     let finalImageUrl = image_url !== undefined ? ((image_url && image_url.startsWith('blob:')) ? product.image_url : image_url) : product.image_url;
     let finalImageUrl2 = image_url_2 !== undefined ? ((image_url_2 && image_url_2.startsWith('blob:')) ? product.image_url_2 : image_url_2) : product.image_url_2;
 
-    const [newUrl1, newUrl2] = await Promise.all([
-      req.files?.image?.[0] ? uploadImage(req.files.image[0].buffer, req.files.image[0].originalname) : Promise.resolve(null),
-      req.files?.image2?.[0] ? uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname) : Promise.resolve(null),
-    ]);
-    if (newUrl1) {
-      finalImageUrl = newUrl1;
-      if (product.image_url) deleteImage(product.image_url).catch(() => {});
-    }
-    if (newUrl2) {
-      finalImageUrl2 = newUrl2;
-      if (product.image_url_2) deleteImage(product.image_url_2).catch(() => {});
+    if (req.files?.image?.[0] || req.files?.image2?.[0]) {
+      try {
+        const [newUrl1, newUrl2] = await Promise.all([
+          req.files?.image?.[0] ? uploadImage(req.files.image[0].buffer, req.files.image[0].originalname) : Promise.resolve(null),
+          req.files?.image2?.[0] ? uploadImage(req.files.image2[0].buffer, req.files.image2[0].originalname) : Promise.resolve(null),
+        ]);
+        // NOTE: We intentionally do NOT delete the previous Supabase file here.
+        // Auto-deletion previously wiped valid images on edits; orphaned files are
+        // harmless and far cheaper than losing a customer's uploaded photos.
+        if (newUrl1) finalImageUrl = newUrl1;
+        if (newUrl2) finalImageUrl2 = newUrl2;
+      } catch (uploadErr) {
+        console.error('Image upload error (update):', uploadErr.message || uploadErr);
+        return res.status(503).json({ success: false, message: 'Image upload failed. Please check your connection and try again.' });
+      }
     }
 
     await product.update({

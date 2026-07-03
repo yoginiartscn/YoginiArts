@@ -15,6 +15,7 @@ export default function SalesPage() {
   const [cart, setCart] = useState([]);
   const [form, setForm] = useState({ location_id: '', price_type: 'retail' });
   const [message, setMessage] = useState(null);
+  const [processing, setProcessing] = useState(false);
   const [locDropdownOpen, setLocDropdownOpen] = useState(false);
   const locDropdownRef = useRef(null);
 
@@ -419,7 +420,9 @@ export default function SalesPage() {
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const handleConfirmPayment = async () => {
-    if (cart.length === 0 || !form.location_id) return;
+    if (cart.length === 0 || !form.location_id || processing) return;
+    setProcessing(true);
+    setMessage(null);
     try {
       for (const item of cart) {
         await inventoryApi.sale(api, {
@@ -435,6 +438,8 @@ export default function SalesPage() {
       setEditedPrices({});
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Sale failed' });
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -931,10 +936,20 @@ export default function SalesPage() {
 
               <button
                 onClick={handleConfirmPayment}
-                disabled={cart.length === 0 || !form.location_id}
-                className="w-full py-3.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-bold text-base disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                disabled={cart.length === 0 || !form.location_id || processing}
+                className="w-full py-3.5 bg-amber-700 text-white rounded-[1.2rem] hover:bg-amber-800 font-bold text-base disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
-                {t('completeSale')}
+                {processing ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    {t('processing')}
+                  </>
+                ) : (
+                  t('completeSale')
+                )}
               </button>
             </div>
           </div>
