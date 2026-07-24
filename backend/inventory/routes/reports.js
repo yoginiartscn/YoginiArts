@@ -37,7 +37,7 @@ const thinBorder = {
 // Used by the quotation export to download many product images in parallel without
 // firing hundreds of simultaneous requests at Supabase. Order of results matches
 // the input array.
-async function mapWithConcurrency(items, mapper, concurrency = 12) {
+async function mapWithConcurrency(items, mapper, concurrency = 40) {
   const results = new Array(items.length);
   let cursor = 0;
   const worker = async () => {
@@ -75,8 +75,8 @@ async function fetchImageData(url) {
 // ─── prefetchRowImages — download every row's images up front, in parallel ─────
 // getUrls(item) -> [url1, url2]. Returns an array aligned to `items`, each entry
 // being [data1|null, data2|null]. This replaces the old per-row sequential
-// download: ~840ms × N images becomes ~N/12 × 840ms, so reports build in seconds.
-async function prefetchRowImages(items, getUrls, concurrency = 12) {
+// download: ~840ms × N images becomes ~N/40 × 840ms, so reports build in seconds.
+async function prefetchRowImages(items, getUrls, concurrency = 40) {
   return mapWithConcurrency(items, async (item) => {
     const [u1, u2] = getUrls(item);
     const [d1, d2] = await Promise.all([fetchImageData(u1), fetchImageData(u2)]);
@@ -223,18 +223,27 @@ function setCell(row, col, value, font, align) {
   cell.border = thinBorder;
 }
 
-// ─── sendWorkbook — buffer a finished workbook fully, then send as .xlsx ────────
-// Buffering the whole file first (instead of streaming workbook.xlsx.write(res))
-// means a mid-build error surfaces as a clean 500 — handled by the caller's catch —
-// rather than leaving the client with a half-written attachment that opens blank.
-// This is the same approach the quotation export uses.
-async function sendWorkbook(res, workbook, fileName) {
-  const xlsxBuffer = await workbook.xlsx.writeBuffer();
+// ─── startExport / finishExport — flush download headers BEFORE the slow work ──
+// Image-heavy exports (1000+ products) can take well over a minute to build. If
+// headers are only sent at the very end (buffer-then-send), the connection sits
+// with zero response bytes for that whole time — and Render/Cloudflare's reverse
+// proxy treats that as a stalled origin and kills it with a 502 (confirmed in
+// production: a 502 arrives ~50s in, before the workbook is anywhere near ready).
+// Flushing headers immediately means real bytes reach the client right away, so
+// the proxy sees an active response and lets the body trickle in afterward. The
+// tradeoff is that a build error after this point can't be turned into a clean
+// 500 anymore — it just ends the response early — but a truncated download you
+// can retry beats a guaranteed 502 on every large export.
+function startExport(res, fileName) {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Content-Length', xlsxBuffer.length);
-  res.end(Buffer.isBuffer(xlsxBuffer) ? xlsxBuffer : Buffer.from(xlsxBuffer));
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+}
+
+async function finishExport(res, workbook) {
+  await workbook.xlsx.write(res);
+  res.end();
 }
 
 // ─── GET /transactions ─────────────────────────────────────────────────────────
@@ -392,10 +401,8 @@ router.get('/export/quotation', authenticate, async (req, res) => {
     const allCategories = ['Singing Bowl', 'Thanka', 'Thanka Locket', 'Jewelleries'];
     const categoriesToExport = category ? [category] : allCategories;
 
-    // Build the filename. Headers are written later, after the workbook buffer is
-    // ready, so that any failure during image downloads / sheet generation can
-    // still return a clean 500 — flushing headers up-front would commit a 200
-    // xlsx response and any later throw would deliver a blank/truncated file.
+    // Build the filename and flush the download headers BEFORE any slow work —
+    // see startExport's comment for why this matters in production.
     const catFileMap = {
       'Singing Bowl': 'SingingBowl',
       'Thanka': 'Thanka',
@@ -415,6 +422,7 @@ router.get('/export/quotation', authenticate, async (req, res) => {
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const datePart = `${dd}-${mm}-${now.getFullYear()}`;
     const fileName = `Yogini_${catPart}${locPart}_${pricePart}_${datePart}.xlsx`;
+    startExport(res, fileName);
 
     // Load template to copy logo and styling from it
     const templatePath = path.join(TEMPLATES_DIR, 'SingingBowlTemplates.xlsx');
@@ -484,9 +492,10 @@ router.get('/export/quotation', authenticate, async (req, res) => {
     //      mapWithConcurrency) and stash the raw buffer + dimensions in memory.
     //   2. Write rows sequentially using those pre-fetched buffers. Excel writes
     //      are CPU-bound and fast; what used to take minutes (N × network RTT)
-    //      now takes seconds (~N/12 × network RTT).
+    //      now takes seconds (~N/40 × network RTT).
     //
-    // Images are passed through unmodified — original quality preserved.
+    // downloadImage prefers a downscaled Supabase rendition over the original —
+    // see its comment in config/supabase.js.
     const writeProducts = async (sheet, products, startRow, config) => {
       const PX_TO_EMU = 9525;
       const cellWidthPx = config.imgColWidth * 7.5;
@@ -507,7 +516,7 @@ router.get('/export/quotation', authenticate, async (req, res) => {
         } catch {
           return null;
         }
-      }, 12);
+      }, 40);
 
       // Phase 2 — write rows. Column layout differs per category — Thanka has no
       // Weight column, so columns are: 1=image, 2=name, 3=barcode, 4=size, 5=price.
@@ -598,15 +607,8 @@ router.get('/export/quotation', authenticate, async (req, res) => {
       setupSheet(sheet, getCatConfig('Singing Bowl'));
     }
 
-    // Buffer the workbook fully, then send. Writing to a buffer first means a
-    // mid-build error surfaces as a clean 500 (handled in catch below) instead
-    // of leaving the client with a half-written attachment that opens as blank.
-    const xlsxBuffer = await workbook.xlsx.writeBuffer();
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Length', xlsxBuffer.length);
-    res.end(Buffer.isBuffer(xlsxBuffer) ? xlsxBuffer : Buffer.from(xlsxBuffer));
+    // Headers were already flushed at the top of the handler; just stream the body.
+    await finishExport(res, workbook);
   } catch (error) {
     console.error('Export quotation error:', error);
     if (!res.headersSent) {
@@ -630,6 +632,13 @@ router.get('/export/transfers', authenticate, async (req, res) => {
       ];
     }
 
+    // Resolve the location + filename first (fast PK lookup) so headers can be
+    // flushed before the slow transaction query and image downloads below.
+    const loc = location_id ? await Location.findByPk(location_id) : null;
+    const locName = location_id ? (loc?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown') : 'All_Locations';
+    const dateStr = new Date().toISOString().slice(0, 10);
+    startExport(res, `${locName}_${dateStr}_transfer.xlsx`);
+
     const transfers = await Transaction.findAll({
       where,
       include: [
@@ -646,10 +655,7 @@ router.get('/export/transfers', authenticate, async (req, res) => {
 
     const { workbook, sheet } = await loadTemplate('TransferTemplates.xlsx', 'Transfer Records', headers, colWidths);
 
-    if (location_id) {
-      const loc = await Location.findByPk(location_id);
-      if (loc) sheet.name = loc.name;
-    }
+    if (loc) sheet.name = loc.name;
 
     // Download all row images in parallel up front, then build rows from buffers.
     const imageData = await prefetchRowImages(transfers, (tx) => [tx.product?.image_url, tx.product?.image_url_2]);
@@ -670,12 +676,7 @@ router.get('/export/transfers', authenticate, async (req, res) => {
       setCell(row, 5, new Date(tx.createdAt).toLocaleDateString());
     }
 
-    const locName = location_id
-      ? (await Location.findByPk(location_id))?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown'
-      : 'All_Locations';
-    const dateStr = new Date().toISOString().slice(0, 10);
-
-    await sendWorkbook(res, workbook, `${locName}_${dateStr}_transfer.xlsx`);
+    await finishExport(res, workbook);
   } catch (error) {
     console.error('Export transfers error:', error);
     if (!res.headersSent) {
@@ -690,6 +691,7 @@ router.get('/export/transfers', authenticate, async (req, res) => {
 router.get('/export/excel', authenticate, async (req, res) => {
   try {
     const { location_id } = req.query;
+    startExport(res, 'yogini-arts-products.xlsx');
 
     let products;
     if (location_id) {
@@ -739,7 +741,7 @@ router.get('/export/excel', authenticate, async (req, res) => {
       }
     }
 
-    await sendWorkbook(res, workbook, 'yogini-arts-products.xlsx');
+    await finishExport(res, workbook);
   } catch (error) {
     console.error('Export error:', error);
     if (!res.headersSent) {
@@ -768,6 +770,14 @@ router.get('/export/sales', authenticate, async (req, res) => {
         where.createdAt[Op.lte] = endOfDay;
       }
     }
+
+    // Resolve the filename first (fast PK lookup) so headers can be flushed
+    // before the slow transaction query and image downloads below.
+    const locName = location_id
+      ? (await Location.findByPk(location_id))?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown'
+      : 'All_Locations';
+    const dateStr = new Date().toISOString().slice(0, 10);
+    startExport(res, `${locName}_${dateStr}_sales.xlsx`);
 
     const sales = await Transaction.findAll({
       where,
@@ -808,12 +818,7 @@ router.get('/export/sales', authenticate, async (req, res) => {
       setCell(row, 9, tx.createdByUser?.name || '-');
     }
 
-    const locName = location_id
-      ? (await Location.findByPk(location_id))?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown'
-      : 'All_Locations';
-    const dateStr = new Date().toISOString().slice(0, 10);
-
-    await sendWorkbook(res, workbook, `${locName}_${dateStr}_sales.xlsx`);
+    await finishExport(res, workbook);
   } catch (error) {
     console.error('Export sales error:', error);
     if (!res.headersSent) {

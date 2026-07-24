@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(npx playwright *)",
-      "Bash(node _tmp_test_thanka.cjs)"
+      "Bash(node _tmp_test_thanka.cjs)",
+      "Bash(node _tmp_test_prod_download.cjs)"
     ]
   }
 }

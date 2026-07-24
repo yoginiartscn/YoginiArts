@@ -8,25 +8,42 @@ import { useLanguage } from '../context/LanguageContext';
 // request (CDN cold start / transient network), which previously left a broken/blank box.
 // This retries the load a few times with a cache-busting param + small backoff before
 // finally showing an "N/A" placeholder, so a real image is shown whenever one exists.
-function ProductThumb({ src, alt, onClick, sizeClass, roundClass, count }) {
+function ProductThumb({ src, fallbackSrc, alt, onClick, sizeClass, roundClass, count }) {
   const [currentSrc, setCurrentSrc] = useState(src);
+  const [usedFallback, setUsedFallback] = useState(false);
   const [failed, setFailed] = useState(false);
   const retriesRef = useRef(0);
   const MAX_RETRIES = 3;
 
+  useEffect(() => {
+    setCurrentSrc(src);
+    setUsedFallback(false);
+    setFailed(false);
+    retriesRef.current = 0;
+  }, [src]);
+
   const handleError = useCallback(() => {
+    // Resized-render endpoint failing (e.g. free-plan Supabase project doesn't support
+    // on-the-fly transforms) — fall back to the original full-size URL once before
+    // giving up, same pattern as the full-screen preview modal.
+    if (!usedFallback && fallbackSrc && fallbackSrc !== src) {
+      setUsedFallback(true);
+      setCurrentSrc(fallbackSrc);
+      return;
+    }
+    const base = usedFallback ? fallbackSrc : src;
     if (retriesRef.current < MAX_RETRIES) {
       const attempt = retriesRef.current + 1;
       retriesRef.current = attempt;
       // Re-request with a cache-busting param after a short backoff so a transient
       // failure doesn't permanently leave the slot empty.
       setTimeout(() => {
-        setCurrentSrc(`${src}${src.includes('?') ? '&' : '?'}retry=${attempt}`);
+        setCurrentSrc(`${base}${base.includes('?') ? '&' : '?'}retry=${attempt}`);
       }, 400 * attempt);
     } else {
       setFailed(true);
     }
-  }, [src]);
+  }, [src, fallbackSrc, usedFallback]);
 
   return (
     <div className={`relative ${sizeClass} flex-shrink-0`}>
@@ -60,7 +77,8 @@ const MobileProductCard = memo(function MobileProductCard({ p, showWeight, showD
         {imgs.length > 0 ? (
           <ProductThumb
             key={imgs[0]}
-            src={imgs[0]}
+            src={getResizedImageUrl(imgs[0], { width: 128 })}
+            fallbackSrc={imgs[0]}
             alt={p.name}
             onClick={() => onPreview(p)}
             sizeClass="w-16 h-16"
@@ -2488,7 +2506,8 @@ export default function ProductsPage() {
                                 return imgs.length > 0 ? (
                                   <ProductThumb
                                     key={imgs[0]}
-                                    src={imgs[0]}
+                                    src={getResizedImageUrl(imgs[0], { width: 96 })}
+                                    fallbackSrc={imgs[0]}
                                     alt={p.name}
                                     onClick={() => openProductPreview(p)}
                                     sizeClass="w-10 h-10"

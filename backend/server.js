@@ -207,6 +207,13 @@ const startServer = async () => {
     console.log('\n✨ Ready to accept form submissions!');
   });
   
+  // Large Excel exports (image downloads + workbook build) can legitimately take
+  // over a minute with zero response bytes sent until the buffer is ready. Node's
+  // default socket inactivity timeout can otherwise kill that connection before the
+  // file is ready — disable it; per-image downloads already have their own 10s
+  // timeout, so a genuinely stuck request still can't hang forever.
+  server.timeout = 0;
+
   // Handle server errors
   server.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {
