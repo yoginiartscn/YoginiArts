@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import Quagga from '@ericblade/quagga2';
 import { useApi } from '../hooks/useApi';
 import { productsApi, reportsApi, locationsApi, getImageUrl, getResizedImageUrl } from '../utils/inventoryApi';
@@ -49,7 +49,7 @@ function ProductThumb({ src, alt, onClick, sizeClass, roundClass, count }) {
   );
 }
 
-const MobileProductCard = React.memo(function MobileProductCard({ p, showWeight, showDescription, t, onEdit, onDelete, onPreview, onDescription }) {
+const MobileProductCard = memo(function MobileProductCard({ p, showWeight, showDescription, t, onEdit, onDelete, onPreview, onDescription }) {
   const imgs = [getImageUrl(p.image_url), getImageUrl(p.image_url_2)].filter(Boolean);
   return (
     <div
@@ -251,6 +251,7 @@ export default function ProductsPage() {
   const [quotationPriceType, setQuotationPriceType] = useState('retail_price');
   const [quotationCatOpen, setQuotationCatOpen] = useState(false);
   const [quotationPriceOpen, setQuotationPriceOpen] = useState(false);
+  const [quotationExporting, setQuotationExporting] = useState(false);
   const quotationCatRef = useRef(null);
   const quotationPriceRef = useRef(null);
   const [duplicateProduct, setDuplicateProduct] = useState(null);
@@ -1270,6 +1271,13 @@ export default function ProductsPage() {
     // <a download> attribute is ignored by Chrome and the page would navigate to the
     // URL (showing it in the address bar). An iframe stays invisible — the browser
     // just sees Content-Disposition: attachment and routes it to the downloads bar.
+    //
+    // Large categories (e.g. Thanka, 1000+ products) embed one image per row, so the
+    // backend can take a while to build the workbook and the browser shows nothing
+    // until the response starts. Without a loading indicator this looked exactly like
+    // the button doing nothing, so we show a spinner and only clear it once the iframe
+    // actually navigates (onload) or a generous fallback elapses.
+    setQuotationExporting(true);
     let iframe = document.getElementById('inv-download-iframe');
     if (!iframe) {
       iframe = document.createElement('iframe');
@@ -1277,8 +1285,15 @@ export default function ProductsPage() {
       iframe.style.display = 'none';
       document.body.appendChild(iframe);
     }
+    const done = () => {
+      setQuotationExporting(false);
+      setShowQuotation(false);
+    };
+    iframe.onload = done;
+    // Fallback in case onload doesn't fire for an attachment response in some browsers.
+    // Large image-heavy categories can legitimately take over a minute to build.
+    setTimeout(done, 180000);
     iframe.src = url;
-    setShowQuotation(false);
   };
 
   const handleManualBarcodeSubmit = () => {
@@ -2666,7 +2681,7 @@ export default function ProductsPage() {
       {showQuotation && (
         <div
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onClick={() => setShowQuotation(false)}
+          onClick={() => { setShowQuotation(false); setQuotationExporting(false); }}
         >
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-bold text-gray-800 mb-2">{t('downloadQuotation')}</h2>
@@ -2780,15 +2795,28 @@ export default function ProductsPage() {
 
             <button
               onClick={handleDownloadQuotation}
-              className="w-full py-2.5 bg-green-700 text-white rounded-[1.2rem] hover:bg-green-800 font-medium transition-colors flex items-center justify-center gap-2 mb-3"
+              disabled={quotationExporting}
+              className="w-full py-2.5 bg-green-700 text-white rounded-[1.2rem] hover:bg-green-800 disabled:opacity-60 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center gap-2"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
+              {quotationExporting ? (
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              )}
               {t('downloadExcel')}
             </button>
+            <div className="mb-3">
+              {quotationExporting && (
+                <p className="text-xs text-gray-500 text-center mt-1.5">{t('preparingExport')}</p>
+              )}
+            </div>
             <button
-              onClick={() => setShowQuotation(false)}
+              onClick={() => { setShowQuotation(false); setQuotationExporting(false); }}
               className="w-full py-2.5 bg-gray-200 text-gray-700 rounded-[1.2rem] hover:bg-gray-300 font-medium transition-colors"
             >
               {t('cancel')}

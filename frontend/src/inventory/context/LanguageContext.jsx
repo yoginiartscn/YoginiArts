@@ -74,6 +74,7 @@ const translations = {
     retailPriceList: 'Retail Price List',
     wholesalePriceList: 'Wholesale Price List',
     downloadExcel: 'Download Excel',
+    preparingExport: 'Preparing your file… large categories can take a minute.',
 
     // Common form/UI
     typeToFilter: 'Type to filter...',
@@ -295,6 +296,7 @@ const translations = {
     retailPriceList: '零售价格表',
     wholesalePriceList: '批发价格表',
     downloadExcel: '下载 Excel',
+    preparingExport: '正在准备文件…较大的分类可能需要一分钟。',
 
     // Common form/UI
     typeToFilter: '输入筛选...',

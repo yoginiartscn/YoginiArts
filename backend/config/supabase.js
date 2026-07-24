@@ -55,6 +55,21 @@ async function deleteImage(publicUrl) {
   await supabase.storage.from(BUCKET).remove([filePath]);
 }
 
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 10000;
+
+// Races a promise against a timeout so a stalled network call can never hang its
+// caller forever — used by bulk exports (e.g. quotations with 1000+ products) where
+// a single stuck image would otherwise block the whole request indefinitely.
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Image download timed out')), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 /**
  * Download an image by its URL and return the buffer.
  * Handles: Supabase storage URLs, any http(s) URL, and legacy local /uploads/ paths.
@@ -62,34 +77,36 @@ async function deleteImage(publicUrl) {
 async function downloadImage(publicUrl) {
   if (!publicUrl) return null;
 
-  // For Supabase URLs, use the storage API (faster, authenticated)
-  if (supabase && publicUrl.includes('supabase')) {
-    const marker = `/storage/v1/object/public/${BUCKET}/`;
-    const idx = publicUrl.indexOf(marker);
-    if (idx !== -1) {
-      const filePath = publicUrl.substring(idx + marker.length);
-      const { data, error } = await supabase.storage.from(BUCKET).download(filePath);
-      if (error || !data) return null;
-      return Buffer.from(await data.arrayBuffer());
+  try {
+    // For Supabase URLs, use the storage API (faster, authenticated)
+    if (supabase && publicUrl.includes('supabase')) {
+      const marker = `/storage/v1/object/public/${BUCKET}/`;
+      const idx = publicUrl.indexOf(marker);
+      if (idx !== -1) {
+        const filePath = publicUrl.substring(idx + marker.length);
+        const { data, error } = await withTimeout(supabase.storage.from(BUCKET).download(filePath), IMAGE_DOWNLOAD_TIMEOUT_MS);
+        if (error || !data) return null;
+        return Buffer.from(await data.arrayBuffer());
+      }
     }
-  }
 
-  // Fallback: fetch any http(s) URL
-  if (publicUrl.startsWith('http')) {
-    try {
-      const response = await fetch(publicUrl);
+    // Fallback: fetch any http(s) URL
+    if (publicUrl.startsWith('http')) {
+      const response = await fetch(publicUrl, { signal: AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS) });
       if (!response.ok) return null;
       return Buffer.from(await response.arrayBuffer());
-    } catch { return null; }
-  }
-
-  // Legacy: local /uploads/ path — read from disk if file exists
-  if (publicUrl.startsWith('/uploads/')) {
-    const fs = require('fs');
-    const localPath = path.join(__dirname, '..', publicUrl);
-    if (fs.existsSync(localPath)) {
-      return fs.readFileSync(localPath);
     }
+
+    // Legacy: local /uploads/ path — read from disk if file exists
+    if (publicUrl.startsWith('/uploads/')) {
+      const fs = require('fs');
+      const localPath = path.join(__dirname, '..', publicUrl);
+      if (fs.existsSync(localPath)) {
+        return fs.readFileSync(localPath);
+      }
+    }
+  } catch {
+    return null;
   }
 
   return null;
