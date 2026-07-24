@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npx playwright *)",
+      "Bash(node _tmp_test_thanka.cjs)"
     ]
   }
 }
