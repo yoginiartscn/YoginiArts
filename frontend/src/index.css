@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Declare sources explicitly. Tailwind v4 auto-detects source files relative to
+   the build's working directory, which differs between local builds and Render's
+   (where it silently found almost nothing and emitted a ~25kB stylesheet instead
+   of ~70kB, so the deployed site rendered completely unstyled). These paths are
+   resolved relative to this file, so they hold no matter where the build runs. */
+@source "../index.html";
+@source "../src/**/*.{js,jsx,ts,tsx}";
+
 @theme {
   --color-primary-50: #F5F3F0;
   --color-primary-100: #E8E0D6;
