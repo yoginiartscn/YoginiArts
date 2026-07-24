@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const bodyParser = require('body-parser');
 const path = require('path');
+const fs = require('fs');
 const config = require('./config/environment');
 const { errorHandler, notFoundHandler } = require('./middleware/validation');
 
@@ -57,7 +58,14 @@ const corsOrigin = (origin, callback) => {
   if (origin.endsWith('.onrender.com')) {
     return callback(null, true);
   }
-  
+
+  // Allow Vercel domains — the frontend is deployed there, and each preview
+  // deployment gets its own generated *.vercel.app hostname, so matching the
+  // suffix keeps previews working without listing them individually.
+  if (origin.endsWith('.vercel.app')) {
+    return callback(null, true);
+  }
+
   // Reject other origins
   callback(new Error('Not allowed by CORS'));
 };
@@ -111,8 +119,12 @@ app.all('*', (req, res, next) => {
   if (req.path.startsWith('/api')) {
     return next();
   }
-  if (isProduction) {
-    return res.sendFile(path.join(distPath, 'index.html'));
+  // Only serve the SPA if a build is actually present. When the frontend is
+  // deployed separately (Vercel) there is no dist/ here, and sendFile would
+  // throw ENOENT on every non-API request — including health checks.
+  const indexHtml = path.join(distPath, 'index.html');
+  if (isProduction && fs.existsSync(indexHtml)) {
+    return res.sendFile(indexHtml);
   }
   res.status(404).json({
     success: false,
