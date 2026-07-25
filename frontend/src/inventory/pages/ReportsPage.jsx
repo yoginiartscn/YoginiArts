@@ -54,26 +54,36 @@ export default function ReportsPage() {
   const [reportDateTo, setReportDateTo] = useState('');
   const [exporting, setExporting] = useState(false);
 
-  const fetchTransactions = async (page = 1) => {
+  // Monotonic request id so that only the most recent fetch is allowed to write
+  // state. Without this, changing Type then Location fires two overlapping
+  // requests and the earlier (location-less) one can resolve last, overwriting
+  // the correct location-filtered rows and Total Sales with an all-locations total.
+  const reqIdRef = useRef(0);
+
+  const runFetch = async (activeFilters, page = 1) => {
+    const myId = ++reqIdRef.current;
     setLoading(true);
     try {
       const params = { page, limit: 25 };
-      if (filters.type) params.type = filters.type;
-      if (filters.location_id) params.location_id = filters.location_id;
-      if (filters.start_date) params.start_date = filters.start_date;
-      if (filters.end_date) params.end_date = filters.end_date;
+      if (activeFilters.type) params.type = activeFilters.type;
+      if (activeFilters.location_id) params.location_id = activeFilters.location_id;
+      if (activeFilters.start_date) params.start_date = activeFilters.start_date;
+      if (activeFilters.end_date) params.end_date = activeFilters.end_date;
       if (debouncedSearch) params.search = debouncedSearch;
 
       const res = await reportsApi.getTransactions(api, params);
+      if (myId !== reqIdRef.current) return; // superseded by a newer request
       setTransactions(res.data.data);
       setPagination(res.data.pagination);
       setTotalSales(res.data.total_sales || 0);
     } catch (err) {
-      console.error(err);
+      if (myId === reqIdRef.current) console.error(err);
     } finally {
-      setLoading(false);
+      if (myId === reqIdRef.current) setLoading(false);
     }
   };
+
+  const fetchTransactions = (page = 1) => runFetch(filters, page);
 
   useEffect(() => {
     Promise.all([fetchTransactions(), locationsApi.getAll(api).then((r) => setLocations(r.data.data))]);
@@ -92,17 +102,7 @@ export default function ReportsPage() {
   const updateFilter = (key, value) => {
     const newFilters = { ...filters, [key]: value };
     setFilters(newFilters);
-    setLoading(true);
-    const params = { page: 1, limit: 25 };
-    if (newFilters.type) params.type = newFilters.type;
-    if (newFilters.location_id) params.location_id = newFilters.location_id;
-    if (newFilters.start_date) params.start_date = newFilters.start_date;
-    if (newFilters.end_date) params.end_date = newFilters.end_date;
-    if (debouncedSearch) params.search = debouncedSearch;
-    reportsApi.getTransactions(api, params)
-      .then((res) => { setTransactions(res.data.data); setPagination(res.data.pagination); setTotalSales(res.data.total_sales || 0); })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    runFetch(newFilters, 1);
   };
 
   const downloadFile = (blob, filename) => {
@@ -339,7 +339,7 @@ export default function ReportsPage() {
         {/* Clear filters */}
         {(filters.type || filters.location_id || filters.start_date || filters.end_date) && (
           <button
-            onClick={() => { setFilters({ type: '', location_id: '', start_date: '', end_date: '' }); fetchTransactions(1); }}
+            onClick={() => { const cleared = { type: '', location_id: '', start_date: '', end_date: '' }; setFilters(cleared); runFetch(cleared, 1); }}
             className="px-3 py-2.5 text-gray-400 hover:text-gray-600 text-sm transition-colors"
             title="Clear filters"
           >

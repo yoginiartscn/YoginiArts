@@ -182,6 +182,10 @@ const translations = {
     productName: 'Product Name',
     remove: 'Remove',
     salesFrom: 'Sales From',
+    sellingFrom: 'Selling from',
+    selectSaleLocationFirst: 'Select a sale location before selling',
+    chooseLocation: 'Choose location',
+    changeLocation: 'Change',
 
     // Locations Page
     addLocation: '+ Add Location',
@@ -404,6 +408,10 @@ const translations = {
     productName: '产品名称',
     remove: '移除',
     salesFrom: '销售地点',
+    sellingFrom: '销售地点',
+    selectSaleLocationFirst: '销售前请先选择销售地点',
+    chooseLocation: '选择地点',
+    changeLocation: '更改',
 
     // Locations Page
     addLocation: '+ 添加位置',

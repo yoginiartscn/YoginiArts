@@ -288,6 +288,12 @@ router.get('/transactions', authenticate, async (req, res) => {
         limit: parseInt(limit),
         offset,
       }),
+      // Total Sales must honour the same filters as the list. Spreading `where`
+      // carries over the location filter (the Op.or on from/to_location_id), the
+      // date range, and product_id — the object spread copies symbol keys like
+      // Op.or, so this stays scoped to e.g. the selected location. Do NOT replace
+      // `...where` with a bare { type: 'sale' } or the total goes back to summing
+      // every location.
       Transaction.findOne({
         where: { ...where, type: 'sale' },
         include: search ? [{ model: Product, as: 'product', where: productWhere, required: true, attributes: [] }] : [],

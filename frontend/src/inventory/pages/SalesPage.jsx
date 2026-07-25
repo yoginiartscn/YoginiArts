@@ -86,11 +86,11 @@ export default function SalesPage() {
     Promise.all([productsApi.getAll(api), locationsApi.getAll(api), inventoryApi.getAll(api)])
       .then(([prodRes, locRes, invRes]) => {
         setProducts(prodRes.data.data);
-        const locs = locRes.data.data;
-        setLocations(locs);
+        setLocations(locRes.data.data);
         setInventoryData(invRes.data.data);
-        const defaultLoc = locs.find((l) => l.name === 'Guangzhou Warehouse');
-        if (defaultLoc) setForm((prev) => ({ ...prev, location_id: prev.location_id || defaultLoc.id }));
+        // No default location — the seller must actively pick where the sale happens
+        // so sales are attributed to the correct location (exhibition/shop/warehouse).
+        // The prominent banner below and the disabled "Complete Sale" button enforce this.
       });
   };
 
@@ -150,6 +150,11 @@ export default function SalesPage() {
   };
 
   const addToCart = (product) => {
+    // Require a sale location first so the sale is attributed correctly.
+    if (!form.location_id) {
+      setLocDropdownOpen(true);
+      return;
+    }
     // Check stock at selected location
     const stock = getStock(product.id, form.location_id);
     if (stock <= 0) {
@@ -393,6 +398,11 @@ export default function SalesPage() {
     : [];
 
   const handleSearchSelect = (product) => {
+    // Require a sale location first so the sale is attributed correctly.
+    if (!form.location_id) {
+      setLocDropdownOpen(true);
+      return;
+    }
     // Always add (not toggle) when selecting from search
     const stock = getStock(product.id, form.location_id);
     if (stock <= 0) {
@@ -504,6 +514,45 @@ export default function SalesPage() {
           </div>
         </div>
       </div>
+
+      {/* Sale Location Banner — makes the active sale location unmissable so sales
+          aren't accidentally recorded against the wrong location. */}
+      {form.location_id ? (
+        <div className="mb-3 flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] bg-amber-50 border-2 border-amber-300">
+          <div className="flex items-center gap-2 text-amber-800 min-w-0">
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span className="text-sm truncate">
+              {t('sellingFrom')}: <span className="font-bold">{selectedLocName}</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLocDropdownOpen(true)}
+            className="px-4 py-1.5 bg-white border border-amber-300 text-amber-800 rounded-full text-sm font-medium hover:bg-amber-100 transition-colors shrink-0"
+          >
+            {t('changeLocation')}
+          </button>
+        </div>
+      ) : (
+        <div className="mb-3 flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] bg-red-50 border-2 border-red-300">
+          <div className="flex items-center gap-2 text-red-700 min-w-0">
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span className="text-sm font-semibold truncate">{t('selectSaleLocationFirst')}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLocDropdownOpen(true)}
+            className="px-4 py-1.5 bg-red-600 text-white rounded-full text-sm font-medium hover:bg-red-700 transition-colors shrink-0"
+          >
+            {t('chooseLocation')}
+          </button>
+        </div>
+      )}
 
       {/* Message */}
       {message && (
