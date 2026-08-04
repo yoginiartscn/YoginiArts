@@ -17,19 +17,28 @@ export const getImageUrl = (url) => {
   return `${SERVER_ORIGIN}${url}`;
 };
 
-// Return a resized variant of a Supabase Storage public URL using the /render/image/ endpoint.
-// On Supabase Pro plans this serves a CDN-cached resized image; on free plans the URL may 404,
-// in which case callers should fall back to the original URL via an onError handler.
+// Widths at or below this resolve to the small thumbnail; anything larger to the
+// preview-sized variant. Mirrors VARIANTS in backend/config/supabase.js.
+const THUMB_MAX_WIDTH = 400;
+const STORAGE_PUBLIC_MARKER = '/storage/v1/object/public/';
+
+// Return the pre-generated variant of a Supabase Storage public URL for a given
+// display width. Derivatives are produced once at upload time and stored as plain
+// objects — we do NOT use the /render/image/ endpoint, which bills per unique
+// origin image per month and so scales its cost with the size of the catalogue.
+//
+// The variant may be absent for images uploaded before the backfill ran, so every
+// caller must pass the original URL as a fallback (ProductThumb's `fallbackSrc`,
+// or an onError handler) — a 404 here is expected and recoverable, not a bug.
 // Non-Supabase URLs (blob:, local /uploads/, other hosts) are returned unchanged.
-export const getResizedImageUrl = (url, { width, quality = 80 } = {}) => {
+export const getResizedImageUrl = (url, { width } = {}) => {
   if (!url) return null;
   if (url.startsWith('blob:')) return url;
-  const marker = '/storage/v1/object/public/';
-  const idx = url.indexOf(marker);
-  if (idx === -1 || !width) return url;
-  const rendered = url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/');
-  const params = [`width=${width}`, `quality=${quality}`, 'resize=contain'];
-  return `${rendered}?${params.join('&')}`;
+  if (!width || !url.includes(STORAGE_PUBLIC_MARKER)) return url;
+  const [base, query] = url.split('?');
+  const stem = base.replace(/\.[^./]+$/, '');
+  const variant = width <= THUMB_MAX_WIDTH ? '-thumb.jpg' : '-lg.webp';
+  return `${stem}${variant}${query ? `?${query}` : ''}`;
 };
 
 export const productsApi = {

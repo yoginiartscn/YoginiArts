@@ -23,8 +23,8 @@ function ProductThumb({ src, fallbackSrc, alt, onClick, sizeClass, roundClass, c
   }, [src]);
 
   const handleError = useCallback(() => {
-    // Resized-render endpoint failing (e.g. free-plan Supabase project doesn't support
-    // on-the-fly transforms) — fall back to the original full-size URL once before
+    // Pre-generated variant missing — expected for images uploaded before the
+    // derivative backfill ran. Fall back to the original full-size URL once before
     // giving up, same pattern as the full-screen preview modal.
     if (!usedFallback && fallbackSrc && fallbackSrc !== src) {
       setUsedFallback(true);
@@ -1378,7 +1378,7 @@ export default function ProductsPage() {
         const u = p && getImageUrl(p.image_url);
         if (!u) return;
         const im = new Image();
-        im.src = getResizedImageUrl(u, { width: 1600, quality: 80 });
+        im.src = getResizedImageUrl(u, { width: 1600 });
       });
     }
   }, [previewImages?.index, flatVisibleProducts]);
@@ -2948,14 +2948,14 @@ export default function ProductsPage() {
                   )}
                   <img
                     key={previewProductImageUrl}
-                    src={getResizedImageUrl(previewProductImageUrl, { width: 1600, quality: 80 })}
+                    src={getResizedImageUrl(previewProductImageUrl, { width: 1600 })}
                     alt={previewProduct.name || 'Product'}
                     loading="eager"
                     fetchpriority="high"
                     onLoad={() => setPreviewImgLoading(false)}
                     onError={(e) => {
-                      // Supabase render endpoint failed (likely free-plan limitation) — fall back
-                      // to the original full-size URL once. Then mark loading complete.
+                      // Pre-generated -lg variant missing (image predates the backfill) — fall
+                      // back to the original full-size URL once. Then mark loading complete.
                       if (e.target.src !== previewProductImageUrl) {
                         e.target.src = previewProductImageUrl;
                       } else {

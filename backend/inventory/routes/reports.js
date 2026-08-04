@@ -64,8 +64,14 @@ async function fetchImageData(url) {
   try {
     const buffer = await downloadImage(url);
     if (!buffer) return null;
-    const ext = path.extname(url.split('?')[0]).replace('.', '').toLowerCase() || 'jpeg';
-    return { buffer, extension: ext === 'jpg' ? 'jpeg' : ext, dimensions: imageSize(buffer) };
+    // Sniff the format from the bytes rather than the URL: downloadImage returns the
+    // pre-generated JPEG thumbnail, whose container can differ from the extension on
+    // the stored URL (a .png product resolves to a -thumb.jpg). Handing ExcelJS the
+    // wrong extension for the buffer produces a workbook Excel refuses to open.
+    const dimensions = imageSize(buffer);
+    const sniffed = String(dimensions.type || '').toLowerCase();
+    const extension = sniffed === 'jpg' ? 'jpeg' : (sniffed || 'jpeg');
+    return { buffer, extension, dimensions };
   } catch (err) {
     console.error('fetchImageData error:', err?.message || err);
     return null;
@@ -507,22 +513,12 @@ router.get('/export/quotation', authenticate, async (req, res) => {
       const cellWidthPx = config.imgColWidth * 7.5;
       const maxImgPx = config.maxImgPx;
 
-      // Phase 1 — parallel fetch
-      const imageData = await mapWithConcurrency(products, async (p) => {
-        if (!p.image_url) return null;
-        try {
-          const buffer = await downloadImage(p.image_url);
-          if (!buffer) return null;
-          const ext = path.extname(p.image_url.split('?')[0]).replace('.', '').toLowerCase() || 'jpeg';
-          return {
-            buffer,
-            extension: ext === 'jpg' ? 'jpeg' : ext,
-            dimensions: imageSize(buffer),
-          };
-        } catch {
-          return null;
-        }
-      }, 40);
+      // Phase 1 — parallel fetch. Goes through fetchImageData rather than inlining
+      // the download: that helper sniffs the image format from the returned bytes,
+      // which the quotation sheet needs as much as every other export now that
+      // downloadImage resolves to the pre-generated JPEG thumbnail (a .png product
+      // URL yields JPEG bytes, and ExcelJS must be told 'jpeg', not 'png').
+      const imageData = await mapWithConcurrency(products, (p) => fetchImageData(p.image_url), 40);
 
       // Phase 2 — write rows. Column layout differs per category — Thanka has no
       // Weight column, so columns are: 1=image, 2=name, 3=barcode, 4=size, 5=price.
